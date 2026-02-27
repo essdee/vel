@@ -77,6 +77,8 @@ func main() {
 		runStart(os.Args[2:])
 	case "build":
 		runBuild(os.Args[2:])
+	case "caps":
+		runCaps(os.Args[2:])
 	case "version":
 		fmt.Printf("vel %s\n", Version)
 	case "help", "--help", "-h":
@@ -102,6 +104,7 @@ Usage:
 Commands:
   start     Start the server (default if no command given)
   build     Scan apps, check capabilities, compile binary
+  caps      List or export app capabilities
   version   Print version
   help      Show this help
 
@@ -126,6 +129,41 @@ func runBuild(args []string) {
 
 	if err := build.Run(opts); err != nil {
 		fmt.Fprintf(os.Stderr, "\n  ✗ %s\n\n", err)
+		os.Exit(1)
+	}
+}
+
+func runCaps(args []string) {
+	rootDir, _ := os.Getwd()
+
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: vel caps <list|export> [app]\n")
+		os.Exit(1)
+	}
+
+	switch args[0] {
+	case "list":
+		var err error
+		if len(args) > 1 {
+			err = build.CapsListApp(rootDir, args[1])
+		} else {
+			err = build.CapsListAll(rootDir)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+			os.Exit(1)
+		}
+	case "export":
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: vel caps export <app>\n")
+			os.Exit(1)
+		}
+		if err := build.CapsExport(rootDir, args[1]); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown caps command: %s\nUsage: vel caps <list|export> [app]\n", args[0])
 		os.Exit(1)
 	}
 }

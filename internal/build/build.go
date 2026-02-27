@@ -26,13 +26,10 @@ var Tier1Packages = map[string]bool{
 	"time": true, "sort": true, "errors": true, "unicode": true, "unicode/utf8": true,
 	"bytes": true, "context": true, "sync": true, "maps": true, "slices": true, "cmp": true,
 	"hash": true, "path": true, "regexp": true,
-	// Encoding (no I/O)
 	"encoding/json": true, "encoding/xml": true, "encoding/csv": true,
 	"encoding/base64": true, "encoding/hex": true,
-	// Crypto (no I/O)
 	"crypto/sha256": true, "crypto/sha512": true, "crypto/md5": true,
 	"crypto/hmac": true, "crypto/rand": true,
-	// Framework
 	"github.com/essdee/vel/pkg/vel": true,
 }
 
@@ -44,7 +41,7 @@ var BlacklistedPackages = map[string]bool{
 	"plugin":        true,
 	"reflect":       true,
 	"runtime/debug": true,
-	"os":            true, // all os.* is blacklisted — use ctx.*
+	"os":            true,
 }
 
 // BlacklistedFunctions in otherwise-available packages.
@@ -57,7 +54,7 @@ var BlacklistedFunctions = map[string][]string{
 
 // Tier2Categories map capability names to the packages they unlock.
 var Tier2Categories = map[string][]string{
-	"read":  {"os"}, // via ctx wrappers
+	"read":  {"os"},
 	"write": {"os"},
 	"net":   {"net/http", "net/url"},
 	"env":   {"os"},
@@ -93,50 +90,17 @@ func Run(opts Options) error {
 	fmt.Println("\n⚡ vel build")
 	fmt.Printf("  Mode: %s\n", opts.Mode)
 
-	// Step 1: Discover apps with Go code
-	appsDir := filepath.Join(opts.RootDir, "apps")
-	appEntries, err := os.ReadDir(appsDir)
+	// Load site config
+	siteCfg, err := LoadSiteConfig(opts.RootDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Println("  No apps/ directory found. Nothing to build.")
-			return nil
-		}
-		return fmt.Errorf("reading apps/: %w", err)
+		return fmt.Errorf("loading vel.yaml: %w", err)
 	}
 
-	var apps []AppBuildInfo
-	for _, entry := range appEntries {
-		if !entry.IsDir() {
-			continue
-		}
-		appDir := filepath.Join(appsDir, entry.Name())
-
-		// Check for Go files
-		goFiles, _ := filepath.Glob(filepath.Join(appDir, "*.go"))
-		subGoFiles, _ := filepath.Glob(filepath.Join(appDir, "**", "*.go"))
-		goFiles = append(goFiles, subGoFiles...)
-		if len(goFiles) == 0 {
-			continue
-		}
-
-		// Load app.json
-		manifestData, err := os.ReadFile(filepath.Join(appDir, "app.json"))
-		if err != nil {
-			return fmt.Errorf("app %q: cannot read app.json: %w", entry.Name(), err)
-		}
-		var manifest AppManifest
-		if err := json.Unmarshal(manifestData, &manifest); err != nil {
-			return fmt.Errorf("app %q: invalid app.json: %w", entry.Name(), err)
-		}
-
-		apps = append(apps, AppBuildInfo{
-			Name:     manifest.Name,
-			Dir:      appDir,
-			GoFiles:  goFiles,
-			Manifest: &manifest,
-		})
+	// Step 1: Discover apps with Go code
+	apps, err := discoverApps(opts.RootDir)
+	if err != nil {
+		return err
 	}
-
 	if len(apps) == 0 {
 		fmt.Println("  No apps with Go code found. Nothing to build.")
 		return nil
@@ -147,72 +111,14 @@ func Run(opts Options) error {
 		fmt.Printf("    → %s (%d .go files)\n", app.Name, len(app.GoFiles))
 	}
 
-	// Step 2: Parse Go AST and extract imports
+	// Step 2: Scan imports, collect violations and tier 2 imports
 	fmt.Println("\n  Scanning imports...")
-	var allViolations []Violation
-
-	for _, app := range apps {
-		fset := token.NewFileSet()
-		for _, goFile := range app.GoFiles {
-			f, err := parser.ParseFile(fset, goFile, nil, parser.ImportsOnly)
-			if err != nil {
-				return fmt.Errorf("parsing %s: %w", goFile, err)
-			}
-
-			for _, imp := range f.Imports {
-				importPath := strings.Trim(imp.Path.Value, `"`)
-				pos := fset.Position(imp.Pos())
-				relFile, _ := filepath.Rel(opts.RootDir, pos.Filename)
-
-				// Check against tiers
-				if Tier1Packages[importPath] {
-					continue // always allowed
-				}
-
-				if BlacklistedPackages[importPath] {
-					v := Violation{
-						App:    app.Name,
-						File:   relFile,
-						Line:   pos.Line,
-						Import: importPath,
-						Reason: "blacklisted package",
-					}
-					allViolations = append(allViolations, v)
-					continue
-				}
-
-				// Check if it's a standard library package (starts without a dot in first segment)
-				if !strings.Contains(strings.Split(importPath, "/")[0], ".") {
-					// Standard library, not in tier 1 or blacklist — check tier 2
-					if !hasCapabilityForImport(app.Manifest, importPath) && opts.Mode == "strict" {
-						v := Violation{
-							App:    app.Name,
-							File:   relFile,
-							Line:   pos.Line,
-							Import: importPath,
-							Reason: "undeclared capability",
-						}
-						allViolations = append(allViolations, v)
-					}
-					continue
-				}
-
-				// Third-party package — check if declared in capabilities
-				if !hasThirdPartyCapability(app.Manifest, importPath) && opts.Mode == "strict" {
-					v := Violation{
-						App:    app.Name,
-						File:   relFile,
-						Line:   pos.Line,
-						Import: importPath,
-						Reason: "undeclared third-party dependency",
-					}
-					allViolations = append(allViolations, v)
-				}
-			}
-		}
+	allViolations, tier2Imports, err := scanAppImports(apps, opts, siteCfg)
+	if err != nil {
+		return err
 	}
 
-	// In bypass mode, log violations but don't fail
+	// Handle violations
 	if len(allViolations) > 0 {
 		if opts.Mode == "strict" {
 			fmt.Printf("\n  ✗ %d violation(s) found:\n\n", len(allViolations))
@@ -239,7 +145,20 @@ func Run(opts Options) error {
 		return fmt.Errorf("creating _build/: %w", err)
 	}
 
-	// Step 4: Copy app Go files to _build/apps/
+	// Step 4: Generate cap/* wrappers for tier 2 imports
+	rewriteMap := make(map[string]string)
+	if len(tier2Imports) > 0 {
+		fmt.Println("\n  Generating capability wrappers...")
+		rewriteMap, err = GenerateWrappers(buildDir, tier2Imports)
+		if err != nil {
+			return fmt.Errorf("generating wrappers: %w", err)
+		}
+		for orig, wrapper := range rewriteMap {
+			fmt.Printf("    → %s → %s\n", orig, wrapper)
+		}
+	}
+
+	// Step 5: Copy app Go files to _build/apps/ with AST rewriting
 	for _, app := range apps {
 		destDir := filepath.Join(buildDir, "apps", app.Name)
 		if err := os.MkdirAll(destDir, 0755); err != nil {
@@ -251,41 +170,37 @@ func Run(opts Options) error {
 			if err := os.MkdirAll(filepath.Dir(destFile), 0755); err != nil {
 				return err
 			}
-			data, err := os.ReadFile(goFile)
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(destFile, data, 0644); err != nil {
-				return err
+
+			if len(rewriteMap) > 0 {
+				if err := RewriteImports(goFile, destFile, rewriteMap); err != nil {
+					return fmt.Errorf("rewriting imports in %s: %w", goFile, err)
+				}
+			} else {
+				data, err := os.ReadFile(goFile)
+				if err != nil {
+					return err
+				}
+				if err := os.WriteFile(destFile, data, 0644); err != nil {
+					return err
+				}
 			}
 		}
 	}
 
-	// Step 5: Generate _build/main.go
+	// Step 6: Generate _build/main.go
 	fmt.Println("\n  Generating main.go...")
-	mainGo := generateMainGo(apps, opts.RootDir)
+	mainGo := generateMainGo(apps, opts)
 	mainGoPath := filepath.Join(buildDir, "main.go")
 	if err := os.WriteFile(mainGoPath, []byte(mainGo), 0644); err != nil {
 		return fmt.Errorf("writing main.go: %w", err)
 	}
 
-	// Step 6: Copy go.mod and go.sum to _build/
-	for _, f := range []string{"go.mod", "go.sum"} {
-		src := filepath.Join(opts.RootDir, f)
-		dst := filepath.Join(buildDir, f)
-		data, err := os.ReadFile(src)
-		if err != nil {
-			if f == "go.sum" {
-				continue // go.sum might not exist yet
-			}
-			return fmt.Errorf("reading %s: %w", f, err)
-		}
-		if err := os.WriteFile(dst, data, 0644); err != nil {
-			return err
-		}
+	// Step 7: Copy go.mod and go.sum, update go.mod for wrapper module
+	if err := setupBuildModule(opts.RootDir, buildDir); err != nil {
+		return err
 	}
 
-	// Step 7: Run go build
+	// Step 8: Run go build
 	outputName := opts.Output
 	if outputName == "" {
 		outputName = "vel"
@@ -301,7 +216,7 @@ func Run(opts Options) error {
 		return fmt.Errorf("go build failed: %w", err)
 	}
 
-	// Step 8: Clean _build/ unless --keep
+	// Step 9: Clean _build/ unless --keep
 	if !opts.Keep {
 		os.RemoveAll(buildDir)
 		fmt.Println("  Cleaned _build/")
@@ -313,15 +228,132 @@ func Run(opts Options) error {
 	return nil
 }
 
-func generateMainGo(apps []AppBuildInfo, rootDir string) string {
+func discoverApps(rootDir string) ([]AppBuildInfo, error) {
+	appsDir := filepath.Join(rootDir, "apps")
+	appEntries, err := os.ReadDir(appsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading apps/: %w", err)
+	}
+
+	var apps []AppBuildInfo
+	for _, entry := range appEntries {
+		if !entry.IsDir() {
+			continue
+		}
+		appDir := filepath.Join(appsDir, entry.Name())
+
+		goFiles, _ := filepath.Glob(filepath.Join(appDir, "*.go"))
+		subGoFiles, _ := filepath.Glob(filepath.Join(appDir, "**", "*.go"))
+		goFiles = append(goFiles, subGoFiles...)
+		if len(goFiles) == 0 {
+			continue
+		}
+
+		manifestData, err := os.ReadFile(filepath.Join(appDir, "app.json"))
+		if err != nil {
+			return nil, fmt.Errorf("app %q: cannot read app.json: %w", entry.Name(), err)
+		}
+		var manifest AppManifest
+		if err := json.Unmarshal(manifestData, &manifest); err != nil {
+			return nil, fmt.Errorf("app %q: invalid app.json: %w", entry.Name(), err)
+		}
+
+		apps = append(apps, AppBuildInfo{
+			Name:     manifest.Name,
+			Dir:      appDir,
+			GoFiles:  goFiles,
+			Manifest: &manifest,
+		})
+	}
+	return apps, nil
+}
+
+func scanAppImports(apps []AppBuildInfo, opts Options, siteCfg *SiteConfig) ([]Violation, map[string]bool, error) {
+	var allViolations []Violation
+	tier2Imports := make(map[string]bool)
+
+	// Build site block set
+	siteBlocked := make(map[string]bool)
+	for _, b := range siteCfg.Capabilities.Block {
+		siteBlocked[b] = true
+	}
+
+	for _, app := range apps {
+		// Merge site-level allows for this app
+		siteAllows := make(map[string]bool)
+		if appCfg, ok := siteCfg.Capabilities.Apps[app.Name]; ok {
+			for _, a := range appCfg.Allow {
+				siteAllows[a] = true
+			}
+		}
+
+		fset := token.NewFileSet()
+		for _, goFile := range app.GoFiles {
+			f, err := parser.ParseFile(fset, goFile, nil, parser.ImportsOnly)
+			if err != nil {
+				return nil, nil, fmt.Errorf("parsing %s: %w", goFile, err)
+			}
+
+			for _, imp := range f.Imports {
+				importPath := strings.Trim(imp.Path.Value, `"`)
+				pos := fset.Position(imp.Pos())
+				relFile, _ := filepath.Rel(opts.RootDir, pos.Filename)
+
+				if Tier1Packages[importPath] {
+					continue
+				}
+
+				if BlacklistedPackages[importPath] {
+					allViolations = append(allViolations, Violation{
+						App: app.Name, File: relFile, Line: pos.Line,
+						Import: importPath, Reason: "blacklisted package",
+					})
+					continue
+				}
+
+				// Check site-level blocks (function-level like "net/http.ListenAndServe")
+				// These are checked at function-call level, not import level
+
+				// Standard library (no dot in first segment)
+				if !strings.Contains(strings.Split(importPath, "/")[0], ".") {
+					// It's a tier 2 stdlib import
+					tier2Imports[importPath] = true
+
+					if !hasCapabilityForImport(app.Manifest, importPath) &&
+						!siteAllows[importPath] &&
+						opts.Mode == "strict" {
+						allViolations = append(allViolations, Violation{
+							App: app.Name, File: relFile, Line: pos.Line,
+							Import: importPath, Reason: "undeclared capability",
+						})
+					}
+					continue
+				}
+
+				// Third-party
+				if !hasThirdPartyCapability(app.Manifest, importPath) && opts.Mode == "strict" {
+					allViolations = append(allViolations, Violation{
+						App: app.Name, File: relFile, Line: pos.Line,
+						Import: importPath, Reason: "undeclared third-party dependency",
+					})
+				}
+			}
+		}
+	}
+
+	return allViolations, tier2Imports, nil
+}
+
+func generateMainGo(apps []AppBuildInfo, opts Options) string {
 	var b strings.Builder
 	b.WriteString("// Code generated by vel build. DO NOT EDIT.\n")
 	b.WriteString("package main\n\n")
 	b.WriteString("import (\n")
 
-	// Import app packages with blank identifier (for registration side effects)
 	for _, app := range apps {
-		// Use the module-relative import path
 		b.WriteString(fmt.Sprintf("\t_ \"vel/apps/%s\"\n", app.Name))
 	}
 
@@ -334,11 +366,28 @@ func generateMainGo(apps []AppBuildInfo, rootDir string) string {
 	return b.String()
 }
 
+func setupBuildModule(rootDir, buildDir string) error {
+	for _, f := range []string{"go.mod", "go.sum"} {
+		src := filepath.Join(rootDir, f)
+		dst := filepath.Join(buildDir, f)
+		data, err := os.ReadFile(src)
+		if err != nil {
+			if f == "go.sum" {
+				continue
+			}
+			return fmt.Errorf("reading %s: %w", f, err)
+		}
+		if err := os.WriteFile(dst, data, 0644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func hasCapabilityForImport(manifest *AppManifest, importPath string) bool {
 	if manifest.Capabilities == nil {
 		return false
 	}
-	// Check each tier 2 category
 	for cap, pkgs := range Tier2Categories {
 		for _, pkg := range pkgs {
 			if importPath == pkg || strings.HasPrefix(importPath, pkg+"/") {
@@ -355,9 +404,8 @@ func hasThirdPartyCapability(manifest *AppManifest, importPath string) bool {
 	if manifest.Capabilities == nil {
 		return false
 	}
-	// Check if the third-party package (or a prefix of it) is declared
 	for cap := range manifest.Capabilities {
-		if strings.Contains(cap, ".") { // third-party packages contain dots
+		if strings.Contains(cap, ".") {
 			if importPath == cap || strings.HasPrefix(importPath, cap+"/") || strings.HasPrefix(importPath, cap) {
 				return true
 			}
@@ -390,6 +438,101 @@ func ScanImports(dir string) ([]string, error) {
 		return nil
 	})
 	return imports, err
+}
+
+// ScanDependencyImports scans third-party dependencies in the module cache
+// for blacklisted imports. Returns violations for any blacklisted usage not
+// covered by allow_blocked in the app manifest.
+func ScanDependencyImports(app AppBuildInfo, goModCache string) []Violation {
+	if app.Manifest.Capabilities == nil {
+		return nil
+	}
+
+	var violations []Violation
+
+	for capKey := range app.Manifest.Capabilities {
+		if !strings.Contains(capKey, ".") {
+			continue // not a third-party dep
+		}
+
+		// Find the dep in module cache
+		depDir := findDepInCache(goModCache, capKey)
+		if depDir == "" {
+			continue
+		}
+
+		depCaps := ParseDepCapabilities(app.Manifest, capKey)
+		allowBlocked := make(map[string]bool)
+		if depCaps != nil {
+			for _, ab := range depCaps.AllowBlocked {
+				allowBlocked[ab] = true
+			}
+		}
+
+		fset := token.NewFileSet()
+		filepath.Walk(depDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return nil
+			}
+			f, parseErr := parser.ParseFile(fset, path, nil, parser.ImportsOnly)
+			if parseErr != nil {
+				return nil
+			}
+			for _, imp := range f.Imports {
+				importPath := strings.Trim(imp.Path.Value, `"`)
+				if BlacklistedPackages[importPath] {
+					// Check all blacklisted functions for this package
+					// For fully blacklisted packages, check "pkg.*"
+					key := importPath + ".*"
+					if !allowBlocked[key] {
+						// Also check if specific functions are allowed
+						// For a fully blacklisted package, we need blanket allow or specific function allows
+						pos := fset.Position(imp.Pos())
+						relFile, _ := filepath.Rel(depDir, pos.Filename)
+						violations = append(violations, Violation{
+							App:    app.Name,
+							File:   capKey + "/" + relFile,
+							Line:   pos.Line,
+							Import: importPath,
+							Reason: fmt.Sprintf("blacklisted import in dependency %s", capKey),
+						})
+					}
+				}
+			}
+			return nil
+		})
+	}
+
+	return violations
+}
+
+func findDepInCache(goModCache, depPath string) string {
+	// Try to find the dependency directory in the module cache
+	// Module cache paths use ! for uppercase letters
+	parts := strings.Split(depPath, "/")
+	// Walk the cache looking for a match
+	cacheDir := filepath.Join(goModCache, filepath.Join(parts...))
+
+	// Check if directory exists (might have version suffix)
+	matches, _ := filepath.Glob(cacheDir + "@*")
+	if len(matches) > 0 {
+		return matches[len(matches)-1] // latest version
+	}
+
+	// Try parent path for versioned modules (e.g., github.com/foo/bar/v3)
+	if len(parts) > 0 {
+		for i := len(parts) - 1; i >= 0; i-- {
+			if strings.HasPrefix(parts[i], "v") && len(parts[i]) >= 2 {
+				parentPath := filepath.Join(goModCache, filepath.Join(parts[:i]...))
+				matches, _ = filepath.Glob(parentPath + "@*")
+				if len(matches) > 0 {
+					return matches[len(matches)-1]
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 // init suppresses unused import warnings
