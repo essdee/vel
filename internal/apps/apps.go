@@ -61,7 +61,9 @@ func Discover(rootDir string) ([]*App, []AppError) {
 	}
 
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		// Follow symlinks: check the resolved path
+		info, err := os.Stat(filepath.Join(appsDir, entry.Name()))
+		if err != nil || !info.IsDir() {
 			continue
 		}
 		appDir := filepath.Join(appsDir, entry.Name())
