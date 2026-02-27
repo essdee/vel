@@ -1,0 +1,79 @@
+# Vel — Roadmap
+
+Each version adds one layer. Panels and plugins written for v0.1 will work in v0.5.
+
+---
+
+### v0.1 — Panel Framework ✅ CURRENT
+**Adds:** Panel architecture, hook engine, plugin system, Telegram auth, config-driven personality
+
+**You can build:** Real-time dashboards, monitoring panels, status pages, agent UIs
+
+- Manifest-driven panels (manifest.json + ui.js)
+- Auto-discovery from core/, custom/, plugins/
+- Override system (custom/overrides/)
+- WordPress-style hooks (filters + actions, Go-native)
+- WebSocket live data (2-second push)
+- Telegram HMAC auth + signed cookies
+- Config-driven routes, theming, personality
+- Elm-quality validation errors
+
+---
+
+### v0.2 — Store + Forms
+**Adds:** SQLite store, form rendering, CRUD operations
+
+**You can build:** Todo apps, trackers, note-taking, simple data management
+
+- SQLite default store (pure Go, no CGO)
+- Swappable adapters (PostgreSQL, MySQL)
+- Panels declare forms in manifest.json
+- Auto-migration on schema change
+- `vel doctor` CLI for validation
+
+---
+
+### v0.3 — Pages + Routing
+**Adds:** Multi-page apps, sidebar navigation, URL routing
+
+**You can build:** Multi-page apps, wikis, project management tools
+
+- Config-driven pages with panel assignments
+- Auto-generated sidebar/tab navigation
+- URL routing (/dashboard, /todos, /settings)
+- Panel lazy-loading per page
+- `/api/schema` introspection endpoint
+
+---
+
+### v0.4 — Roles + Permissions
+**Adds:** Role-based access control
+
+**You can build:** Team workspaces, shared apps, basic ERP
+
+- Config-driven roles with user assignments
+- Panel-level permission requirements
+- Page filtering by role
+- Row-level security for store queries
+
+---
+
+### v0.5 — Events + Files
+**Adds:** Inter-panel communication, file handling, search, notifications
+
+**You can build:** Full ERP, CRM, document management, business apps
+
+- Event bus: `api.emit()` / `api.on()`
+- Shared state across panels
+- SQLite FTS5 search
+- File upload + storage
+- Server push notifications
+
+---
+
+## Principles (All Versions)
+
+1. **Config over code** — Users customize via config.json, never edit core/
+2. **Convention over configuration** — Predictable file locations, consistent contracts
+3. **AI-agent-first** — Manifest-driven, validation built in, zero build step
+4. **Forward compatible** — v0.1 plugins work in v0.5 without changes
