@@ -56,7 +56,17 @@ Double-click launch-chrome.bat
 - Only your authenticated OpenClaw agent can send commands
 `
 
-// HandleDownload generates and serves the launcher ZIP.
+// platformFiles maps platform query values to filename and script content.
+var platformFiles = map[string]struct {
+	filename string
+	content  string
+}{
+	"linux":   {"Open Browser - Linux.sh", linuxScript},
+	"mac":     {"Open Browser - Mac.command", macScript},
+	"windows": {"Open Browser - Windows.bat", windowsScript},
+}
+
+// HandleDownload generates and serves the launcher ZIP or a single platform script.
 func (rl *Relay) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	user := auth.Check(r)
 	if user == nil {
@@ -64,6 +74,20 @@ func (rl *Relay) HandleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Single-platform download
+	if p := r.URL.Query().Get("platform"); p != "" {
+		pf, ok := platformFiles[p]
+		if !ok {
+			http.Error(w, "Invalid platform. Use: linux, mac, windows", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+pf.filename+"\"")
+		w.Write([]byte(pf.content))
+		return
+	}
+
+	// Full ZIP with all scripts
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", "attachment; filename=openclaw-launcher.zip")
 
