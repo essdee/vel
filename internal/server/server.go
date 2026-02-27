@@ -20,6 +20,7 @@ import (
 	"vel/internal/datasource"
 	"vel/internal/hooks"
 	"vel/internal/panels"
+	"vel/internal/relay"
 )
 
 type Config struct {
@@ -431,6 +432,14 @@ func NewServer(cfg *Config) http.Handler {
 		writeJSON(w, state)
 	})
 
+	// Browser Relay
+	rl := relay.New()
+	mux.HandleFunc("/relay/token", rl.HandleToken)
+	mux.HandleFunc("/relay/json", rl.HandleTargets)
+	mux.HandleFunc("/relay/ws", rl.HandleBrowserWS)
+	mux.HandleFunc("/relay/cdp", rl.HandleAgentWS)
+	mux.HandleFunc("/relay/download", rl.HandleDownload)
+
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, cfg)
@@ -521,7 +530,7 @@ func applyMiddleware(h http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 		// Gzip
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") {
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") && !strings.HasPrefix(r.URL.Path, "/relay/ws") && !strings.HasPrefix(r.URL.Path, "/relay/cdp") {
 			w.Header().Set("Content-Encoding", "gzip")
 			gz := gzip.NewWriter(w)
 			defer gz.Close()
