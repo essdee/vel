@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"vel/internal/apps"
 	"vel/internal/auth"
 	"vel/internal/data"
 	"vel/internal/hooks"
@@ -29,7 +30,7 @@ type Config struct {
 	Disabled     []string
 	Version      string
 	PublicConfig map[string]interface{} // safe fields for landing page
-	Routes       map[string]string      // URL prefix -> directory (relative to RootDir)
+	Apps         []*apps.App
 	Hooks        *hooks.Engine
 }
 
@@ -111,14 +112,16 @@ func NewServer(cfg *Config) http.Handler {
 		http.FileServer(http.Dir(vendorDir)).ServeHTTP(w, r)
 	})))
 
-	// Config-driven custom static routes
-	for urlPrefix, dirPath := range cfg.Routes {
-		absDir := dirPath
-		if !filepath.IsAbs(absDir) {
-			absDir = filepath.Join(cfg.RootDir, dirPath)
-		}
-		if _, err := os.Stat(absDir); err == nil {
-			mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
+	// App-driven static routes
+	for _, app := range cfg.Apps {
+		for urlPrefix, route := range app.Routes {
+			if route.Type != "static" {
+				continue
+			}
+			absDir := filepath.Join(app.Dir, route.Dir)
+			if _, err := os.Stat(absDir); err == nil {
+				mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
+			}
 		}
 	}
 

@@ -53,7 +53,14 @@ func (r *Registry) Entries() map[string]*PanelInfo {
 	return r.panels
 }
 
-func DiscoverPanels(rootDir string) (*Registry, *Report) {
+// AppInfo is a minimal interface to avoid circular imports with the apps package.
+type AppInfo struct {
+	Name   string
+	Panels string // relative path to panels dir (may be empty)
+	Dir    string // absolute path to app directory
+}
+
+func DiscoverPanels(rootDir string, appList []AppInfo) (*Registry, *Report) {
 	registry := NewRegistry()
 	report := &Report{}
 
@@ -65,20 +72,19 @@ func DiscoverPanels(rootDir string) (*Registry, *Report) {
 		{filepath.Join(rootDir, "custom", "panels"), "custom"},
 	}
 
-	// Discover app panels: apps/*/panels/*/manifest.json
-	appsDir := filepath.Join(rootDir, "apps")
-	if appEntries, err := os.ReadDir(appsDir); err == nil {
-		for _, ae := range appEntries {
-			if !ae.IsDir() {
-				continue
-			}
-			appPanelsDir := filepath.Join(appsDir, ae.Name(), "panels")
-			if _, err := os.Stat(appPanelsDir); err == nil {
-				sources = append(sources, struct {
-					Dir    string
-					Source string
-				}{appPanelsDir, "app:" + ae.Name()})
-			}
+	// Add panel sources from discovered apps
+	for _, app := range appList {
+		var panelsDir string
+		if app.Panels != "" {
+			panelsDir = filepath.Join(app.Dir, app.Panels)
+		} else {
+			panelsDir = filepath.Join(app.Dir, "panels")
+		}
+		if _, err := os.Stat(panelsDir); err == nil {
+			sources = append(sources, struct {
+				Dir    string
+				Source string
+			}{panelsDir, "app:" + app.Name})
 		}
 	}
 

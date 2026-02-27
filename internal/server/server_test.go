@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"vel/internal/apps"
 	"vel/internal/auth"
 	"vel/internal/hooks"
 	"vel/internal/panels"
@@ -44,7 +45,7 @@ func newTestServer(t *testing.T) (http.Handler, string) {
 	auth.Init("test-token", []int64{123}, "test-secret")
 
 	dir := setupTestDir(t)
-	registry, _ := panels.DiscoverPanels(dir)
+	registry, _ := panels.DiscoverPanels(dir, nil)
 
 	cfg := &Config{
 		RootDir:   dir,
@@ -58,7 +59,7 @@ func newTestServer(t *testing.T) (http.Handler, string) {
 			"name":  "TestBoard",
 			"emoji": "🧪",
 		},
-		Routes: map[string]string{},
+		Apps: nil,
 		Hooks:  hooks.New(),
 	}
 
@@ -345,7 +346,7 @@ func TestNotFoundPath(t *testing.T) {
 func TestCustomRoutes(t *testing.T) {
 	auth.Init("test-token", []int64{123}, "test-secret")
 	dir := setupTestDir(t)
-	registry, _ := panels.DiscoverPanels(dir)
+	registry, _ := panels.DiscoverPanels(dir, nil)
 
 	// Create a custom static dir
 	customDir := filepath.Join(dir, "custom", "mysite")
@@ -359,8 +360,15 @@ func TestCustomRoutes(t *testing.T) {
 		Registry:  registry,
 		Version:   "0.1.0-test",
 		PublicConfig: map[string]interface{}{},
-		Routes: map[string]string{
-			"/mysite/": "custom/mysite",
+		Apps: []*apps.App{
+			{
+				Name: "mysite",
+				Version: "1.0.0",
+				Dir: dir,
+				Routes: map[string]apps.Route{
+					"/mysite/": {Type: "static", Dir: "custom/mysite"},
+				},
+			},
 		},
 		Hooks: hooks.New(),
 	}
@@ -380,7 +388,7 @@ func TestCustomRoutes(t *testing.T) {
 func TestThemeServing(t *testing.T) {
 	auth.Init("test-token", []int64{123}, "test-secret")
 	dir := setupTestDir(t)
-	registry, _ := panels.DiscoverPanels(dir)
+	registry, _ := panels.DiscoverPanels(dir, nil)
 
 	// Create theme file
 	themeDir := filepath.Join(dir, "custom", "theme")
@@ -394,7 +402,7 @@ func TestThemeServing(t *testing.T) {
 		Registry:     registry,
 		Version:      "0.1.0-test",
 		PublicConfig: map[string]interface{}{},
-		Routes:       map[string]string{},
+		Apps:         nil,
 		Hooks:        hooks.New(),
 	}
 
@@ -412,7 +420,7 @@ func TestThemeServing(t *testing.T) {
 func TestCustomRouteNonexistentDir(t *testing.T) {
 	auth.Init("test-token", []int64{123}, "test-secret")
 	dir := setupTestDir(t)
-	registry, _ := panels.DiscoverPanels(dir)
+	registry, _ := panels.DiscoverPanels(dir, nil)
 
 	cfg := &Config{
 		RootDir:      dir,
@@ -421,8 +429,10 @@ func TestCustomRouteNonexistentDir(t *testing.T) {
 		Registry:     registry,
 		Version:      "0.1.0-test",
 		PublicConfig: map[string]interface{}{},
-		Routes: map[string]string{
-			"/ghost/": "nonexistent/dir",
+		Apps: []*apps.App{
+			{Name: "ghost", Version: "1.0.0", Dir: dir, Routes: map[string]apps.Route{
+				"/ghost/": {Type: "static", Dir: "nonexistent/dir"},
+			}},
 		},
 		Hooks: hooks.New(),
 	}
@@ -445,7 +455,7 @@ func TestAPIPanelsIncludesCustomPanel(t *testing.T) {
 	os.WriteFile(filepath.Join(customDir, "manifest.json"), []byte(manifest), 0644)
 	os.WriteFile(filepath.Join(customDir, "ui.js"), []byte("export default {}"), 0644)
 
-	registry, _ := panels.DiscoverPanels(dir)
+	registry, _ := panels.DiscoverPanels(dir, nil)
 	cfg := &Config{
 		RootDir:      dir,
 		Workspace:    t.TempDir(),
@@ -454,7 +464,7 @@ func TestAPIPanelsIncludesCustomPanel(t *testing.T) {
 		Order:        []string{"cpu", "my-custom"},
 		Version:      "0.1.0-test",
 		PublicConfig: map[string]interface{}{},
-		Routes:       map[string]string{},
+		Apps:         nil,
 		Hooks:        hooks.New(),
 	}
 
@@ -484,7 +494,8 @@ func TestAPIPanelsIncludesPluginPanel(t *testing.T) {
 	os.WriteFile(filepath.Join(plugDir, "manifest.json"), []byte(manifest), 0644)
 	os.WriteFile(filepath.Join(plugDir, "ui.js"), []byte("export default {}"), 0644)
 
-	registry, _ := panels.DiscoverPanels(dir)
+	appList := []panels.AppInfo{{Name: "myplugin", Panels: "panels/", Dir: filepath.Join(dir, "apps", "myplugin")}}
+	registry, _ := panels.DiscoverPanels(dir, appList)
 	cfg := &Config{
 		RootDir:      dir,
 		Workspace:    t.TempDir(),
@@ -493,7 +504,7 @@ func TestAPIPanelsIncludesPluginPanel(t *testing.T) {
 		Order:        []string{},
 		Version:      "0.1.0-test",
 		PublicConfig: map[string]interface{}{},
-		Routes:       map[string]string{},
+		Apps:         nil,
 		Hooks:        hooks.New(),
 	}
 

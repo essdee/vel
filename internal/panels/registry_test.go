@@ -31,7 +31,7 @@ func TestDiscoverPanels(t *testing.T) {
 	os.WriteFile(filepath.Join(panelDir, "manifest.json"), data, 0644)
 	os.WriteFile(filepath.Join(panelDir, "ui.js"), []byte("export default function(){}"), 0644)
 
-	registry, report := DiscoverPanels(tmpDir)
+	registry, report := DiscoverPanels(tmpDir, nil)
 
 	if len(report.Loaded) != 1 {
 		t.Fatalf("expected 1 loaded panel, got %d", len(report.Loaded))
@@ -77,7 +77,8 @@ func TestPluginPanelsDiscovered(t *testing.T) {
 	os.WriteFile(filepath.Join(pluginPanelDir, "manifest.json"), []byte(manifest), 0644)
 	os.WriteFile(filepath.Join(pluginPanelDir, "ui.js"), []byte("export default {}"), 0644)
 
-	registry, report := DiscoverPanels(tmpDir)
+	appList := []AppInfo{{Name: "myplugin", Panels: "panels/", Dir: filepath.Join(tmpDir, "apps", "myplugin")}}
+	registry, report := DiscoverPanels(tmpDir, appList)
 	if registry.Get("test-plug") == nil {
 		t.Fatal("expected app panel in registry")
 	}
@@ -106,7 +107,7 @@ func TestCustomOverridesCore(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0644)
 		os.WriteFile(filepath.Join(dir, "ui.js"), []byte("export default {}"), 0644)
 	}
-	registry, _ := DiscoverPanels(tmpDir)
+	registry, _ := DiscoverPanels(tmpDir, nil)
 	info := registry.Get("sameid")
 	if info == nil {
 		t.Fatal("expected panel")
@@ -127,15 +128,12 @@ func TestPluginDoesNotOverrideCustom(t *testing.T) {
 		os.WriteFile(filepath.Join(spec.dir, "manifest.json"), []byte(manifest), 0644)
 		os.WriteFile(filepath.Join(spec.dir, "ui.js"), []byte("export default {}"), 0644)
 	}
-	registry, _ := DiscoverPanels(tmpDir)
+	appList := []AppInfo{{Name: "p", Panels: "panels/", Dir: filepath.Join(tmpDir, "apps", "p")}}
+	registry, _ := DiscoverPanels(tmpDir, appList)
 	info := registry.Get("sameid")
 	if info == nil {
 		t.Fatal("expected panel")
 	}
-	// app runs after custom, so it will override. Let me check the source order...
-	// Actually looking at the code, sources are: core, custom, then plugins. 
-	// Registry.Set overwrites, so app WILL override custom.
-	// The test expectation should match actual behavior: app overrides custom.
 	if info.Source != "app:p" {
 		t.Fatalf("expected app:p (last writer wins), got source=%s", info.Source)
 	}
@@ -143,7 +141,7 @@ func TestPluginDoesNotOverrideCustom(t *testing.T) {
 
 func TestNoPluginsDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	_, report := DiscoverPanels(tmpDir)
+	_, report := DiscoverPanels(tmpDir, nil)
 	// Should not error
 	if len(report.Failed) != 0 {
 		t.Fatalf("expected no failures, got %d", len(report.Failed))
@@ -153,7 +151,7 @@ func TestNoPluginsDir(t *testing.T) {
 func TestEmptyPluginsDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.MkdirAll(filepath.Join(tmpDir, "apps"), 0755)
-	_, report := DiscoverPanels(tmpDir)
+	_, report := DiscoverPanels(tmpDir, nil)
 	if len(report.Failed) != 0 {
 		t.Fatalf("expected no failures, got %d", len(report.Failed))
 	}
@@ -165,7 +163,8 @@ func TestPluginInvalidManifest(t *testing.T) {
 	os.MkdirAll(pluginPanelDir, 0755)
 	os.WriteFile(filepath.Join(pluginPanelDir, "manifest.json"), []byte("{invalid json"), 0644)
 
-	registry, report := DiscoverPanels(tmpDir)
+	appList := []AppInfo{{Name: "bad", Panels: "panels/", Dir: filepath.Join(tmpDir, "apps", "bad")}}
+	registry, report := DiscoverPanels(tmpDir, appList)
 	if registry.Get("broken") != nil {
 		t.Fatal("broken panel should not be in registry")
 	}

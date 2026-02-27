@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 
+	"vel/internal/apps"
 	"vel/internal/auth"
 	"vel/internal/hooks"
 	"vel/internal/panels"
@@ -53,9 +54,6 @@ type AppConfig struct {
 		Order    []string `json:"order"`
 		Disabled []string `json:"disabled"`
 	} `json:"panels"`
-
-	// Custom routes
-	Routes map[string]string `json:"routes"`
 
 	// Server
 	Server struct {
@@ -151,9 +149,34 @@ func main() {
 	hookEngine := hooks.New()
 	hookEngine.Emit("core.server.init")
 
+	// Discover apps
+	discoveredApps, appErrors := apps.Discover(rootDir)
+	fmt.Printf("\n┌─ App Report ──────────────────────────\n")
+	fmt.Printf("│ Loaded: %d\n", len(discoveredApps))
+	for _, a := range discoveredApps {
+		label := a.Name + " v" + a.Version
+		if a.Title != "" {
+			label += fmt.Sprintf(" — %q", a.Title)
+		}
+		fmt.Printf("│   ✓ %s\n", label)
+	}
+	if len(appErrors) > 0 {
+		fmt.Printf("│ Errors: %d\n", len(appErrors))
+		for _, e := range appErrors {
+			fmt.Printf("│   %s\n", e)
+		}
+	}
+	fmt.Printf("└────────────────────────────────────────\n")
+
+	// Build panel app list
+	var panelApps []panels.AppInfo
+	for _, a := range discoveredApps {
+		panelApps = append(panelApps, panels.AppInfo{Name: a.Name, Panels: a.Panels, Dir: a.Dir})
+	}
+
 	// Discover panels
 	fmt.Println("\n[Panels] Discovering panels...")
-	registry, report := panels.DiscoverPanels(rootDir)
+	registry, report := panels.DiscoverPanels(rootDir, panelApps)
 
 	fmt.Printf("\n┌─ Panel Report ────────────────────────\n")
 	fmt.Printf("│ Loaded: %d\n", len(report.Loaded))
@@ -244,7 +267,7 @@ func main() {
 		Disabled:     panelDisabled,
 		Version:      version,
 		PublicConfig: publicConfig,
-		Routes:       config.Routes,
+		Apps:         discoveredApps,
 		Hooks:        hookEngine,
 	}
 
