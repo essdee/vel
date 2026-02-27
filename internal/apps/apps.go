@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
 )
 
 type App struct {
@@ -25,12 +26,26 @@ type App struct {
 	Models       string            `json:"models"`
 	Pages        string            `json:"pages"`
 
-	Dir string `json:"-"`
+	Dir            string             `json:"-"`
+	ParsedSources  []ParsedDataSource `json:"-"`
 }
 
 type Route struct {
 	Type string `json:"type"`
 	Dir  string `json:"dir"`
+}
+
+type FileDataSource struct {
+	Type     string `json:"type"`
+	Path     string `json:"path"`
+	Interval string `json:"interval"` // "2s", "10s", "1m"
+}
+
+type ParsedDataSource struct {
+	Name     string
+	Type     string
+	Path     string
+	Interval time.Duration
 }
 
 type AppError struct {
@@ -123,6 +138,64 @@ func Discover(rootDir string) ([]*App, []AppError) {
 					Message: fmt.Sprintf("App %q — panels directory %q not found", entry.Name(), app.Panels),
 					Hint:    fmt.Sprintf("Create directory: %s", app.Panels),
 				})
+			}
+		}
+
+		// Parse data_sources
+		if len(app.DataSources) > 0 {
+			var rawSources map[string]FileDataSource
+			if err := json.Unmarshal(app.DataSources, &rawSources); err != nil {
+				appErrors = append(appErrors, AppError{
+					AppDir:  entry.Name(),
+					Message: fmt.Sprintf("App %q — data_sources is not a valid object: %s", entry.Name(), err),
+				})
+			} else {
+				for dsName, ds := range rawSources {
+					if ds.Type != "file" {
+						appErrors = append(appErrors, AppError{
+							AppDir:  entry.Name(),
+							Message: fmt.Sprintf("App %q — data source %q has unsupported type %q", entry.Name(), dsName, ds.Type),
+							Hint:    "Only \"file\" type is supported. Use Go code via vel build for other data collection.",
+						})
+						continue
+					}
+					if ds.Path == "" {
+						appErrors = append(appErrors, AppError{
+							AppDir:  entry.Name(),
+							Message: fmt.Sprintf("App %q — data source %q missing required field \"path\"", entry.Name(), dsName),
+						})
+						continue
+					}
+					if ds.Interval == "" {
+						appErrors = append(appErrors, AppError{
+							AppDir:  entry.Name(),
+							Message: fmt.Sprintf("App %q — data source %q missing required field \"interval\"", entry.Name(), dsName),
+						})
+						continue
+					}
+					dur, err := time.ParseDuration(ds.Interval)
+					if err != nil {
+						appErrors = append(appErrors, AppError{
+							AppDir:  entry.Name(),
+							Message: fmt.Sprintf("App %q — data source %q has invalid interval %q: %s", entry.Name(), dsName, ds.Interval, err),
+							Hint:    "Use Go duration format: \"2s\", \"10s\", \"1m\"",
+						})
+						continue
+					}
+					if dur < time.Second {
+						appErrors = append(appErrors, AppError{
+							AppDir:  entry.Name(),
+							Message: fmt.Sprintf("App %q — data source %q interval must be at least 1s, got %s", entry.Name(), dsName, ds.Interval),
+						})
+						continue
+					}
+					app.ParsedSources = append(app.ParsedSources, ParsedDataSource{
+						Name:     dsName,
+						Type:     ds.Type,
+						Path:     ds.Path,
+						Interval: dur,
+					})
+				}
 			}
 		}
 

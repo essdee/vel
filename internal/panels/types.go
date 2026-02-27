@@ -17,6 +17,8 @@ type PanelManifest struct {
 	DataSchema      json.RawMessage  `json:"dataSchema"`
 	RateLimit       *RateLimitConfig `json:"rateLimit,omitempty"`
 	Config          json.RawMessage  `json:"config,omitempty"`
+	Data            []string         `json:"data,omitempty"`
+	DataEnvelope    bool             `json:"dataEnvelope,omitempty"`
 }
 
 type RateLimitConfig struct {

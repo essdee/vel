@@ -17,6 +17,7 @@ import (
 	"vel/internal/apps"
 	"vel/internal/auth"
 	"vel/internal/data"
+	"vel/internal/datasource"
 	"vel/internal/hooks"
 	"vel/internal/panels"
 )
@@ -32,6 +33,7 @@ type Config struct {
 	PublicConfig map[string]interface{} // safe fields for landing page
 	Apps         []*apps.App
 	Hooks        *hooks.Engine
+	DSManager    *datasource.Manager
 }
 
 type rateLimiter struct {
@@ -392,6 +394,41 @@ func NewServer(cfg *Config) http.Handler {
 			Path:   "/",
 		})
 		http.Redirect(w, r, "/", http.StatusFound)
+	})
+
+	// Data sources API
+	mux.HandleFunc("/api/sources", func(w http.ResponseWriter, r *http.Request) {
+		user := auth.Check(r)
+		if user == nil {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+		if cfg.DSManager == nil {
+			writeJSON(w, map[string]interface{}{})
+			return
+		}
+		writeJSON(w, cfg.DSManager.GetAllData())
+	})
+
+	mux.HandleFunc("/api/source/", func(w http.ResponseWriter, r *http.Request) {
+		user := auth.Check(r)
+		if user == nil {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/api/source/")
+		if name == "" || cfg.DSManager == nil {
+			http.Error(w, "Source not found", 404)
+			return
+		}
+		state := cfg.DSManager.GetSourceState(name)
+		if state == nil {
+			http.Error(w, "Source not found", 404)
+			return
+		}
+		writeJSON(w, state)
 	})
 
 	// WebSocket

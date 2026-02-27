@@ -14,6 +14,7 @@ import (
 
 	"vel/internal/apps"
 	"vel/internal/auth"
+	"vel/internal/datasource"
 	"vel/internal/hooks"
 	"vel/internal/panels"
 	"vel/internal/server"
@@ -168,6 +169,32 @@ func main() {
 	}
 	fmt.Printf("└────────────────────────────────────────\n")
 
+	// Create datasource manager and register file sources
+	dsManager := datasource.NewManager()
+	dsCount := 0
+	for _, a := range discoveredApps {
+		for _, ds := range a.ParsedSources {
+			if err := dsManager.AddFileSource(a.Name, ds.Name, ds.Path, ds.Interval); err != nil {
+				fmt.Printf("│   ✗ Data source %s:%s — %s\n", a.Name, ds.Name, err)
+			} else {
+				dsCount++
+			}
+		}
+	}
+	if dsCount > 0 {
+		fmt.Printf("\n┌─ Data Sources ────────────────────────\n")
+		fmt.Printf("│ Registered: %d file source(s)\n", dsCount)
+		for key, state := range dsManager.GetAllData() {
+			status := "ready"
+			if !state.OK && state.Data == nil {
+				status = "waiting for file"
+			}
+			fmt.Printf("│   ✓ %s (%s, every %s) — %s\n", key, state.Path, state.Interval, status)
+		}
+		fmt.Printf("└────────────────────────────────────────\n")
+		dsManager.Start()
+	}
+
 	// Build panel app list
 	var panelApps []panels.AppInfo
 	for _, a := range discoveredApps {
@@ -269,6 +296,7 @@ func main() {
 		PublicConfig: publicConfig,
 		Apps:         discoveredApps,
 		Hooks:        hookEngine,
+		DSManager:    dsManager,
 	}
 
 	handler := server.NewServer(cfg)

@@ -129,6 +129,15 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 					}
 				}
 
+				// Add data source data
+				if cfg.DSManager != nil {
+					for key, state := range cfg.DSManager.GetAllData() {
+						if _, exists := panelData[key]; !exists {
+							panelData[key] = state.Data
+						}
+					}
+				}
+
 				msg := map[string]interface{}{
 					"type":   "metrics",
 					"data":   metrics,
@@ -136,6 +145,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 					"agent":  json.RawMessage(data.GetAgentInfo(cfg.Workspace)),
 					"crons":  json.RawMessage(data.GetCronJobs(cfg.Workspace)),
 					"panels": panelData,
+				}
+
+				// Add source status metadata
+				if cfg.DSManager != nil {
+					msg["_sourceStatus"] = cfg.DSManager.GetStatus()
 				}
 
 				if err := conn.WriteJSON(msg); err != nil {
