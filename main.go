@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"vel/internal/apps"
 	"vel/internal/auth"
+	"vel/internal/build"
 	"vel/internal/datasource"
 	"vel/internal/hooks"
 	"vel/internal/panels"
@@ -64,6 +66,75 @@ type AppConfig struct {
 }
 
 func main() {
+	if len(os.Args) < 2 {
+		// Default: start server (backward compatible)
+		runStart(os.Args[1:])
+		return
+	}
+
+	switch os.Args[1] {
+	case "start":
+		runStart(os.Args[2:])
+	case "build":
+		runBuild(os.Args[2:])
+	case "version":
+		fmt.Printf("vel %s\n", Version)
+	case "help", "--help", "-h":
+		printHelp()
+	default:
+		// If it looks like a flag, treat as start
+		if strings.HasPrefix(os.Args[1], "-") {
+			runStart(os.Args[1:])
+			return
+		}
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", os.Args[1])
+		printHelp()
+		os.Exit(1)
+	}
+}
+
+func printHelp() {
+	fmt.Println(`vel — AI-native framework for real-time web apps
+
+Usage:
+  vel [command] [flags]
+
+Commands:
+  start     Start the server (default if no command given)
+  build     Scan apps, check capabilities, compile binary
+  version   Print version
+  help      Show this help
+
+Run 'vel <command> --help' for command-specific flags.`)
+}
+
+func runBuild(args []string) {
+	fs := flag.NewFlagSet("build", flag.ExitOnError)
+	mode := fs.String("mode", "strict", "Build mode: strict (default) or bypass")
+	output := fs.String("output", "vel", "Output binary name")
+	keep := fs.Bool("keep", false, "Keep _build/ directory for debugging")
+	fs.Parse(args)
+
+	rootDir, _ := os.Getwd()
+
+	opts := build.Options{
+		RootDir: rootDir,
+		Mode:    *mode,
+		Output:  *output,
+		Keep:    *keep,
+	}
+
+	if err := build.Run(opts); err != nil {
+		fmt.Fprintf(os.Stderr, "\n  ✗ %s\n\n", err)
+		os.Exit(1)
+	}
+}
+
+func runStart(args []string) {
+	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	portFlag := fs.Int("port", 0, "Override server port")
+	fs.Parse(args)
+
 	rootDir, _ := os.Getwd()
 
 	// TEST_MODE warning
@@ -123,11 +194,13 @@ func main() {
 	// Init auth
 	auth.Init(botToken, allowedUsers, strings.TrimSpace(string(cookieSecret)))
 
-	// Port: env PORT > config.server.port > config.port > 3700
-	port := 0
-	if envPort := os.Getenv("PORT"); envPort != "" {
-		if p, err := strconv.Atoi(envPort); err == nil {
-			port = p
+	// Port: flag > env PORT > config.server.port > config.port > 3700
+	port := *portFlag
+	if port == 0 {
+		if envPort := os.Getenv("PORT"); envPort != "" {
+			if p, err := strconv.Atoi(envPort); err == nil {
+				port = p
+			}
 		}
 	}
 	if port == 0 {
