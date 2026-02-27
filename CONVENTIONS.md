@@ -6,7 +6,7 @@ When CONTRACTS.md doesn't cover your situation, these principles guide the decis
 
 Don't document what can be discovered by reading the file system. `ls core/panels/` teaches panel naming. `cat manifest.json` teaches the schema. If an agent needs to read CONVENTIONS.md to understand naming, the project structure has failed.
 
-**Exception:** empty extension points (no examples to learn from) need bootstrap templates. Every extension point (`custom/panels/`, `custom/routes/`, `plugins/`) should have a `_template/` or `_example` that teaches the pattern.
+**Exception:** empty extension points (no examples to learn from) need bootstrap templates. Every extension point (`custom/panels/`, `custom/routes/`, `apps/`) should have a `_template/` or `_example` that teaches the pattern.
 
 ## 2. Derive from core, don't memorize
 
@@ -16,7 +16,7 @@ Every convention follows from one rule: match the nearest existing **core** patt
 - Adding a hook? Find an existing `hooks.filter()` call, follow its naming.
 - Adding a route? Look at `custom/routes/` examples.
 
-**Important:** always derive from `core/` implementations, never from `custom/` or `plugins/`. Core is the reference implementation.
+**Important:** always derive from `core/` implementations, never from `custom/` or `apps/`. Core is the reference implementation.
 
 ## 3. Names describe WHAT, not HOW
 
@@ -49,7 +49,7 @@ Don't enforce suggestions as rules. Mark the difference.
 ```
 core/panels/       → ls = know all panels
 custom/            → ls = know all user extensions
-plugins/           → ls = know all plugins
+apps/           → ls = know all apps
 ```
 
 If an agent needs to grep for something, the directory structure needs work.

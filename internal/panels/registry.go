@@ -65,19 +65,19 @@ func DiscoverPanels(rootDir string) (*Registry, *Report) {
 		{filepath.Join(rootDir, "custom", "panels"), "custom"},
 	}
 
-	// Discover plugin panels: plugins/*/panels/*/manifest.json
-	pluginsDir := filepath.Join(rootDir, "plugins")
-	if pluginEntries, err := os.ReadDir(pluginsDir); err == nil {
-		for _, pe := range pluginEntries {
-			if !pe.IsDir() {
+	// Discover app panels: apps/*/panels/*/manifest.json
+	appsDir := filepath.Join(rootDir, "apps")
+	if appEntries, err := os.ReadDir(appsDir); err == nil {
+		for _, ae := range appEntries {
+			if !ae.IsDir() {
 				continue
 			}
-			pluginPanelsDir := filepath.Join(pluginsDir, pe.Name(), "panels")
-			if _, err := os.Stat(pluginPanelsDir); err == nil {
+			appPanelsDir := filepath.Join(appsDir, ae.Name(), "panels")
+			if _, err := os.Stat(appPanelsDir); err == nil {
 				sources = append(sources, struct {
 					Dir    string
 					Source string
-				}{pluginPanelsDir, "plugin:" + pe.Name()})
+				}{appPanelsDir, "app:" + ae.Name()})
 			}
 		}
 	}

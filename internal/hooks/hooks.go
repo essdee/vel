@@ -8,7 +8,7 @@ type FilterFunc func(data interface{}, ctx interface{}) interface{}
 // ActionFunc is called when an event is emitted.
 type ActionFunc func(args ...interface{})
 
-// Engine provides a WordPress-style hook system for Go plugins.
+// Engine provides a WordPress-style hook system for Go apps.
 type Engine struct {
 	mu      sync.RWMutex
 	filters map[string][]FilterFunc

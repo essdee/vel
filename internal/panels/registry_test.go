@@ -71,7 +71,7 @@ func TestValidateManifestSchema(t *testing.T) {
 
 func TestPluginPanelsDiscovered(t *testing.T) {
 	tmpDir := t.TempDir()
-	pluginPanelDir := filepath.Join(tmpDir, "plugins", "myplugin", "panels", "test-plug")
+	pluginPanelDir := filepath.Join(tmpDir, "apps", "myplugin", "panels", "test-plug")
 	os.MkdirAll(pluginPanelDir, 0755)
 	manifest := `{"id":"test-plug","contractVersion":"1.0","name":"Plug","description":"d","version":"1.0.0","author":"a","size":"half"}`
 	os.WriteFile(filepath.Join(pluginPanelDir, "manifest.json"), []byte(manifest), 0644)
@@ -79,19 +79,19 @@ func TestPluginPanelsDiscovered(t *testing.T) {
 
 	registry, report := DiscoverPanels(tmpDir)
 	if registry.Get("test-plug") == nil {
-		t.Fatal("expected plugin panel in registry")
+		t.Fatal("expected app panel in registry")
 	}
-	if registry.Get("test-plug").Source != "plugin:myplugin" {
-		t.Fatalf("expected source 'plugin:myplugin', got %s", registry.Get("test-plug").Source)
+	if registry.Get("test-plug").Source != "app:myplugin" {
+		t.Fatalf("expected source 'app:myplugin', got %s", registry.Get("test-plug").Source)
 	}
 	found := false
 	for _, l := range report.Loaded {
-		if l.ID == "test-plug" && l.Source == "plugin:myplugin" {
+		if l.ID == "test-plug" && l.Source == "app:myplugin" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("plugin panel not in loaded report")
+		t.Fatal("app panel not in loaded report")
 	}
 }
 
@@ -120,7 +120,7 @@ func TestPluginDoesNotOverrideCustom(t *testing.T) {
 	tmpDir := t.TempDir()
 	for _, spec := range []struct{ dir, source string }{
 		{filepath.Join(tmpDir, "custom", "panels", "sameid"), "custom"},
-		{filepath.Join(tmpDir, "plugins", "p", "panels", "sameid"), "plugin:p"},
+		{filepath.Join(tmpDir, "apps", "p", "panels", "sameid"), "app:p"},
 	} {
 		os.MkdirAll(spec.dir, 0755)
 		manifest := `{"id":"sameid","contractVersion":"1.0","name":"N","description":"d","version":"1.0.0","author":"a","size":"half"}`
@@ -132,12 +132,12 @@ func TestPluginDoesNotOverrideCustom(t *testing.T) {
 	if info == nil {
 		t.Fatal("expected panel")
 	}
-	// plugin runs after custom, so it will override. Let me check the source order...
+	// app runs after custom, so it will override. Let me check the source order...
 	// Actually looking at the code, sources are: core, custom, then plugins. 
-	// Registry.Set overwrites, so plugin WILL override custom.
-	// The test expectation should match actual behavior: plugin overrides custom.
-	if info.Source != "plugin:p" {
-		t.Fatalf("expected plugin:p (last writer wins), got source=%s", info.Source)
+	// Registry.Set overwrites, so app WILL override custom.
+	// The test expectation should match actual behavior: app overrides custom.
+	if info.Source != "app:p" {
+		t.Fatalf("expected app:p (last writer wins), got source=%s", info.Source)
 	}
 }
 
@@ -152,7 +152,7 @@ func TestNoPluginsDir(t *testing.T) {
 
 func TestEmptyPluginsDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	os.MkdirAll(filepath.Join(tmpDir, "plugins"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "apps"), 0755)
 	_, report := DiscoverPanels(tmpDir)
 	if len(report.Failed) != 0 {
 		t.Fatalf("expected no failures, got %d", len(report.Failed))
@@ -161,7 +161,7 @@ func TestEmptyPluginsDir(t *testing.T) {
 
 func TestPluginInvalidManifest(t *testing.T) {
 	tmpDir := t.TempDir()
-	pluginPanelDir := filepath.Join(tmpDir, "plugins", "bad", "panels", "broken")
+	pluginPanelDir := filepath.Join(tmpDir, "apps", "bad", "panels", "broken")
 	os.MkdirAll(pluginPanelDir, 0755)
 	os.WriteFile(filepath.Join(pluginPanelDir, "manifest.json"), []byte("{invalid json"), 0644)
 

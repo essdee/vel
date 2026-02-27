@@ -1,6 +1,6 @@
 # AGENT-EXTEND.md — AI Agent Playbook
 
-**For AI agents:** How to extend Vel apps on behalf of your human. Create custom panels, override core panels, register hooks, add routes, install plugins, and create themes.
+**For AI agents:** How to extend Vel apps on behalf of your human. Create custom panels, override core panels, register hooks, add routes, install apps, and create themes.
 
 ---
 
@@ -22,9 +22,9 @@ Enforced by CI — see `.github/workflows/docs-check.yml`.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for WHY decisions.
 
-Extension points: `custom/panels/`, `custom/overrides/`, `custom/theme/`, `plugins/`, config-driven routes, Go-native hooks.
+Extension points: `custom/panels/`, `custom/overrides/`, `custom/theme/`, `apps/`, config-driven routes, Go-native hooks.
 
-**Override resolution (last wins):** core → custom → plugins → overrides.
+**Override resolution (last wins):** core → custom → apps → overrides.
 
 ---
 
@@ -152,14 +152,14 @@ Config-driven static file serving:
 
 ---
 
-## 5. Install a Plugin
+## 5. Install an App
 
 ```bash
-cd plugins/
-git clone https://github.com/someone/vel-plugin-docker docker
+cd apps/
+git clone https://github.com/someone/vel-app-docker docker
 ```
 
-Plugin panels discovered from `plugins/*/panels/*/manifest.json`.
+App panels discovered from `apps/*/panels/*/manifest.json`.
 
 ---
 
@@ -181,7 +181,7 @@ Plugin panels discovered from `plugins/*/panels/*/manifest.json`.
 - Panel ui.js throws → ErrorBoundary shows error card
 - Hook panics → logged, other hooks continue
 
-**The app never goes down because of custom/plugin code.**
+**The app never goes down because of custom/app code.**
 
 ---
 
@@ -198,7 +198,7 @@ curl http://localhost:3700/api/panels/my-panel
 
 ## Conventions
 
-1. **NEVER edit anything in `core/`** — use custom/ or plugins/
+1. **NEVER edit anything in `core/`** — use custom/ or apps/
 2. **Panel IDs:** lowercase, hyphens only
 3. **Use `cls()`** for scoped class names
 4. **Use CSS variables** for colors

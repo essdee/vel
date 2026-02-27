@@ -1,16 +1,16 @@
 # Vel — Roadmap
 
-Each version adds one layer. Panels and plugins written for v0.1.0 will work in v5.
+Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 
 ---
 
 ### v0.1.0 — Panel Framework ✅ CURRENT
-**Adds:** Panel architecture, hook engine, plugin system, Telegram auth, config-driven personality
+**Adds:** Panel architecture, hook engine, app system, Telegram auth, config-driven personality
 
 **You can build:** Real-time dashboards, monitoring panels, status pages, agent UIs
 
 - Manifest-driven panels (manifest.json + ui.js)
-- Auto-discovery from core/, custom/, plugins/
+- Auto-discovery from core/, custom/, apps/
 - Override system (custom/overrides/)
 - WordPress-style hooks (filters + actions, Go-native)
 - WebSocket live data (2-second push)
@@ -88,4 +88,4 @@ Each version adds one layer. Panels and plugins written for v0.1.0 will work in 
 1. **Config over code** — Users customize via config.json, never edit core/
 2. **Convention over configuration** — Predictable file locations, consistent contracts
 3. **AI-agent-first** — Manifest-driven, validation built in, zero build step
-4. **Forward compatible** — v0.1.0 plugins work in v5 without changes
+4. **Forward compatible** — v0.1.0 apps work in v5 without changes

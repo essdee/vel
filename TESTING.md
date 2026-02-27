@@ -39,7 +39,7 @@ Standard `testing` package. No test frameworks. No assertion libraries.
 - Auth: HMAC validation, cookie signing/verification, TEST_MODE bypass
 - Data: metrics collection returns valid structures
 - Hooks: filter chaining, action firing, thread safety, nil handling
-- Panels: discovery from core/custom/plugins, override logic, invalid manifests
+- Panels: discovery from core/custom/apps, override logic, invalid manifests
 - Schema: error formatting
 - Server: HTTP endpoints, middleware, auth flows
 

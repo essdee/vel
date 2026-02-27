@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <sub>AI-native framework for real-time web apps. Single Go binary. Manifest-driven panels.<br>WebSocket-first. Hook engine. Plugin system. Telegram auth. Zero build step.</sub>
+  <sub>AI-native framework for real-time web apps. Single Go binary. Manifest-driven panels.<br>WebSocket-first. Hook engine. App system. Telegram auth. Zero build step.</sub>
 </p>
 
 ---
@@ -67,7 +67,7 @@ Vel is an **AI-native Go framework** for building real-time panel-based web appl
 - 🔲 **Panel system** — `manifest.json` + `ui.js` = a panel. Auto-discovered. Override-capable.
 - 🔌 **WebSocket-first** — All panels receive live data. No polling. No refresh.
 - 🪝 **Hook engine** — WordPress-style filters + actions, Go-native.
-- 🧩 **Plugin system** — `git clone` into `plugins/`, restart. Done.
+- 🧩 **App system** — `git clone` into `apps/`, restart. Done.
 - 🔐 **Telegram auth** — HMAC-SHA256, signed cookies, rate limiting. Built in.
 - 🎨 **Theming** — CSS variables, custom themes, config-driven personality.
 - 📦 **Single binary** — No runtime dependencies. No node_modules. Ever.
@@ -91,7 +91,7 @@ vel/
 │   ├── vendor/          # Preact+HTM bundle (5KB, vendored)
 │   └── public/          # Shell, landing, CSS, service worker
 ├── custom/              # Your panels, overrides, themes (git-ignored)
-├── plugins/             # Third-party plugins (git-ignored)
+├── apps/             # Third-party apps (git-ignored)
 └── config.json          # Your config (git-ignored)
 ```
 
@@ -160,11 +160,11 @@ mkdir -p custom/overrides/cpu
 cp core/panels/cpu/ui.js custom/overrides/cpu/ui.js  # your version wins
 ```
 
-### Plugins
+### Apps
 ```bash
-cd plugins/
-git clone https://github.com/someone/vel-plugin-docker docker
-# restart — panels auto-discovered from plugins/*/panels/
+cd apps/
+git clone https://github.com/someone/vel-app-docker docker
+# restart — panels auto-discovered from apps/*/panels/
 ```
 
 ### Hooks (Go-native)
@@ -205,7 +205,7 @@ hookEngine.On("core.server.ready", func() {
   "port": 3700,
   "panels": { "order": ["cpu", "memory", "disk"] },
   "routes": {},
-  "plugins": []
+  "apps": []
 }
 ```
 
@@ -250,9 +250,9 @@ See [`AGENT-EXTEND.md`](./AGENT-EXTEND.md) for the full AI agent playbook.
 | AI-agent extensible | ✅ | ❌ | ❌ | ❌ | Maybe |
 | Single binary | ✅ | ❌ | ❌ | ❌ | If you try |
 | WebSocket-first | ✅ | ✅ | ✅ | ❌ | You build it |
-| Plugin system | ✅ | ✅ | ❌ | ❌ | You build it |
+| App system | ✅ | ✅ | ❌ | ❌ | You build it |
 | Hook engine | ✅ | ❌ | ❌ | ❌ | You build it |
-| Telegram auth built-in | ✅ | Plugin | ❌ | ❌ | You build it |
+| Telegram auth built-in | ✅ | App | ❌ | ❌ | You build it |
 | RAM usage | 2.6MB | 200MB+ | 80MB+ | 50MB+ | Varies |
 | Setup time | 30 seconds | Hours | Minutes | Minutes | Days-weeks |
 | Zero build step | ✅ | ❌ | ❌ | ❌ | Unlikely |
@@ -305,7 +305,7 @@ CI enforces tests + docs on every PR. See [`TESTING.md`](./TESTING.md).
 
 See [`ROADMAP.md`](./ROADMAP.md) for the full version plan.
 
-- **v0.1.0** ✅ — Panels, hooks, plugins, auth, config (current)
+- **v0.1.0** ✅ — Panels, hooks, apps, auth, config (current)
 - **v1.0** — Stable API, production-ready dashboard apps
 - **v2** — SQLite store, forms, CRUD
 - **v3** — Pages, routing, navigation

@@ -477,8 +477,8 @@ func TestAPIPanelsIncludesPluginPanel(t *testing.T) {
 	auth.Init("test-token", []int64{123}, "test-secret")
 	dir := setupTestDir(t)
 
-	// Add plugin panel
-	plugDir := filepath.Join(dir, "plugins", "myplugin", "panels", "plug-panel")
+	// Add app panel
+	plugDir := filepath.Join(dir, "apps", "myplugin", "panels", "plug-panel")
 	os.MkdirAll(plugDir, 0755)
 	manifest := `{"id":"plug-panel","contractVersion":"1.0","name":"Plugin Panel","description":"d","version":"1.0.0","author":"a","size":"half"}`
 	os.WriteFile(filepath.Join(plugDir, "manifest.json"), []byte(manifest), 0644)
@@ -503,12 +503,12 @@ func TestAPIPanelsIncludesPluginPanel(t *testing.T) {
 	json.Unmarshal(rr.Body.Bytes(), &resp)
 	found := false
 	for _, p := range resp {
-		if p["id"] == "plug-panel" && p["_source"] == "plugin:myplugin" {
+		if p["id"] == "plug-panel" && p["_source"] == "app:myplugin" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("expected plugin panel in /api/panels")
+		t.Fatal("expected app panel in /api/panels")
 	}
 }
 

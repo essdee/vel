@@ -41,7 +41,7 @@ Send a single message asking:
   "port": 3700,
   "panels": { "order": [], "disabled": [] },
   "routes": {},
-  "plugins": []
+  "apps": []
 }
 ```
 

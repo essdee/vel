@@ -1,6 +1,6 @@
 # Vel Contracts v1.0
 
-> **LOCKED.** Breaking these = major version bump. Read before writing any panel, plugin, hook, or route.
+> **LOCKED.** Breaking these = major version bump. Read before writing any panel, app, hook, or route.
 
 ---
 
@@ -55,7 +55,7 @@ Panel data is served by Go handlers in `internal/data/`. There are no per-panel 
 | `description` | ✅ | Max 100 chars |
 | `version` | ✅ | Semver |
 | `author` | ✅ | `"core"` or author name |
-| `position` | ✅ | Hint, not guarantee. Core: 10-90. Custom: 100+. Plugin: 200+. Tiebreak: alphabetical by id. User `panels.order` in config.json always wins. |
+| `position` | ✅ | Hint, not guarantee. Core: 10-90. Custom: 100+. App: 200+. Tiebreak: alphabetical by id. User `panels.order` in config.json always wins. |
 | `size` | ✅ | `"half"` or `"full"` |
 | `refreshMs` | ✅ | Min 1000, max 300000 |
 | `requires` | ✅ | Dependency IDs. Empty array = none |
@@ -122,7 +122,7 @@ hookEngine.On("core.server.ready", func() {
 - `core.*` — reserved for core
 - `panel.*` — panel hooks
 - `custom.*` — custom hooks
-- `plugin.{name}.*` — plugin hooks
+- `app.{name}.*` — app hooks
 
 **Filters:** modify and return data. If handler returns `nil`, previous value kept.
 
@@ -158,7 +158,7 @@ Routes are config-driven in `config.json`:
 
 /* Prefixes */
 .p-{panel-id}-{name}    /* Panels (use cls() helper) */
-.plg-{plugin-name}-{name}  /* Plugins */
+.app-{app-name}-{name}  /* Apps */
 .c-{name}               /* Core (reserved) */
 ```
 
