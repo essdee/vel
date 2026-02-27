@@ -154,7 +154,7 @@
     }
 
     // ── Panel Wrapper Component ──
-    function PanelCard({ manifest, panelData, panelError, connected, lastUpdate, config: appConfig }) {
+    function PanelCard({ manifest, panelData, panelError, connected, lastUpdate, config: appConfig, sourceStatus }) {
       const [PanelComponent, setPanelComponent] = useState(null);
       const [loadError, setLoadError] = useState(null);
 
@@ -199,9 +199,14 @@
         </div>`;
       }
 
+      // Determine if this panel's data source is stale
+      const panelSourceKey = manifest.dataSource || manifest.id;
+      const isStale = !manifest.dataEnvelope && sourceStatus && sourceStatus[panelSourceKey] && sourceStatus[panelSourceKey].stale;
+
       // For new contract panels (contractVersion set), use Preact component
       if (manifest.contractVersion) {
-        return html`<div class="metric-card ${manifest.size === 'full' ? 'full' : ''}">
+        return html`<div class="metric-card ${manifest.size === 'full' ? 'full' : ''}" style="position: relative;">
+          ${isStale && html`<div class="vel-stale-badge" title="Data source is stale" style="position: absolute; top: 8px; right: 8px; z-index: 10; background: var(--yellow-dim, rgba(255,193,7,0.15)); color: var(--yellow, #ffc107); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; pointer-events: none;">⚠️ Stale</div>`}
           <${ErrorBoundary} panelId=${manifest.id}>
             <${PanelComponent}
               data=${panelData}
@@ -234,6 +239,7 @@
       const [lastUpdateMap, setLastUpdateMap] = useState({});
       const [lastGlobalUpdate, setLastGlobalUpdate] = useState(null);
       const [loading, setLoading] = useState(true);
+      const [sourceStatus, setSourceStatus] = useState({});
       const wsRef = useRef(null);
       const retriesRef = useRef(0);
       const MAX_RETRIES = 10;
@@ -342,6 +348,11 @@
                   if (msg.agent) pd.models = msg.agent;
                 }
 
+                // Update source status for stale badges
+                if (msg._sourceStatus) {
+                  setSourceStatus(msg._sourceStatus);
+                }
+
                 // Cache panel data for fast reload
                 saveCache(pd);
 
@@ -437,6 +448,7 @@
               connected=${connected}
               lastUpdate=${lastUpdateMap[manifest.id] || null}
               config=${config}
+              sourceStatus=${sourceStatus}
             />
           `)}
         </div>

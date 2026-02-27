@@ -89,7 +89,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 					return
 				}
 
-				panelData := make(map[string]interface{})
+				// Build raw data for all known panel IDs (hardcoded sources)
+				rawData := make(map[string]interface{})
 				for id, info := range cfg.Registry.Entries() {
 					if info.Manifest == nil {
 						continue
@@ -97,45 +98,81 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 					switch id {
 					case "cpu":
 						if metrics.CPU != nil {
-							panelData["cpu"] = metrics.CPU
+							rawData["cpu"] = metrics.CPU
 						}
 					case "memory":
 						if metrics.Memory != nil {
-							panelData["memory"] = metrics.Memory
+							rawData["memory"] = metrics.Memory
 						}
 					case "disk":
 						if metrics.Disk != nil {
-							panelData["disk"] = metrics.Disk
+							rawData["disk"] = metrics.Disk
 						}
 					case "uptime":
-						panelData["uptime"] = map[string]interface{}{"uptime": metrics.Uptime, "hostname": metrics.Hostname}
+						rawData["uptime"] = map[string]interface{}{"uptime": metrics.Uptime, "hostname": metrics.Hostname}
 					case "processes":
 						if metrics.Processes != nil {
-							panelData["processes"] = map[string]interface{}{
+							rawData["processes"] = map[string]interface{}{
 								"total": metrics.Processes.Total, "running": metrics.Processes.Running,
 								"sleeping": metrics.Processes.Sleeping, "os": metrics.OS,
 							}
 						}
 					case "claude-usage":
-						panelData["claude-usage"] = data.GetUsageData(cfg.Workspace)
+						rawData["claude-usage"] = data.GetUsageData(cfg.Workspace)
 					case "crons":
-						panelData["crons"] = json.RawMessage(data.GetCronJobs(cfg.Workspace))
+						rawData["crons"] = json.RawMessage(data.GetCronJobs(cfg.Workspace))
 					case "models":
-						panelData["models"] = json.RawMessage(data.GetAgentInfo(cfg.Workspace))
+						rawData["models"] = json.RawMessage(data.GetAgentInfo(cfg.Workspace))
 					case "openclaw-status":
-						panelData["openclaw-status"] = json.RawMessage(data.GetSystemStatus())
+						rawData["openclaw-status"] = json.RawMessage(data.GetSystemStatus())
 					case "_test":
-						panelData["_test"] = map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()}
+						rawData["_test"] = map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()}
 					}
 				}
 
-				// Add data source data
+				// Add data source data (file-based sources)
 				if cfg.DSManager != nil {
 					for key, state := range cfg.DSManager.GetAllData() {
-						if _, exists := panelData[key]; !exists {
-							panelData[key] = state.Data
+						if _, exists := rawData[key]; !exists {
+							rawData[key] = state.Data
 						}
 					}
+				}
+
+				// Build per-panel data, respecting dataSource subscription and dataEnvelope
+				panelData := make(map[string]interface{})
+				for id, info := range cfg.Registry.Entries() {
+					if info.Manifest == nil {
+						continue
+					}
+					m := info.Manifest
+
+					// Determine which data key this panel consumes
+					dataKey := id
+					if m.DataSource != "" {
+						dataKey = m.DataSource
+					}
+
+					d, exists := rawData[dataKey]
+					if !exists {
+						continue
+					}
+
+					// If panel wants full envelope and data comes from a managed source
+					if m.DataEnvelope && cfg.DSManager != nil {
+						state := cfg.DSManager.GetSourceState(dataKey)
+						if state != nil {
+							panelData[id] = map[string]interface{}{
+								"ok":         state.OK,
+								"stale":      state.Stale,
+								"staleSince": state.StaleSince,
+								"data":       state.Data,
+							}
+							continue
+						}
+					}
+
+					panelData[id] = d
 				}
 
 				msg := map[string]interface{}{

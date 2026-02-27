@@ -246,6 +246,12 @@ func BuildPanelList(registry *Registry, order []string, disabled []string, testM
 		if m.Config != nil {
 			item["config"] = json.RawMessage(m.Config)
 		}
+		if m.DataEnvelope {
+			item["dataEnvelope"] = true
+		}
+		if m.DataSource != "" {
+			item["dataSource"] = m.DataSource
+		}
 		result = append(result, item)
 	}
 	return result
