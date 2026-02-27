@@ -20,15 +20,19 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 
 ---
 
-### v1.0 — Data & CLI
+### v1.0 — Data & CLI (in progress)
 **Adds:** Stable app.json contract, data sources, task scheduler, `vel` CLI
 
-**You can build:** Dashboard apps with live data from files, commands, and HTTP APIs
+**You can build:** Dashboard apps with live data from files, Go code, and HTTP APIs
 
-- Stable app.json — the contract for Vel apps is locked
-- Data sources: file, exec, HTTP — panels declare what they need
-- Task scheduler — periodic background jobs
-- `vel` CLI — create, validate, run apps locally
+- ✅ Data sources: file type with polling, stale tracking, JSON retry
+- ✅ Panel stale badge — framework auto-shows ⚠️ on stale panels
+- ✅ `dataEnvelope` manifest field — panels opt into full envelope or get clean data
+- ✅ `dataSource` manifest field — panels subscribe to named sources
+- ✅ `vel build` CLI — scans apps, checks capabilities, compiles binary
+- ✅ `vel start` subcommand — server startup with --port flag
+- ✅ Capability system — tier 1/2/3, blacklist, third-party scanning
+- Task scheduler — periodic background jobs (pending)
 - Ready for third-party dashboard apps
 
 ---
