@@ -1,0 +1,19 @@
+{
+  "name": "My App",
+  "emoji": "⚡",
+  "subtitle": "Built with Vel",
+  "role": "AI Agent",
+  "accent": "#ff6b35",
+  "accentName": "flame",
+  "botUsername": "",
+  "authUrl": "",
+  "telegramLink": "",
+  "allowedUsers": [],
+  "port": 3700,
+  "panels": {
+    "order": [],
+    "disabled": []
+  },
+  "routes": {},
+  "plugins": []
+}

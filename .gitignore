@@ -1,0 +1,13 @@
+# User-owned files (never commit)
+custom/
+plugins/
+config.json
+.env
+.cookie-secret
+
+# Binary
+vell
+
+# OS
+.DS_Store
+Thumbs.db

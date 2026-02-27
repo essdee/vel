@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Dashboard</title>
+  <!-- Preload critical resources — browser fetches these immediately during HTML parse -->
+  <link rel="preload" href="/public/core.css" as="style">
+  <link rel="preload" href="/core/vendor/preact-htm.js" as="script" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/public/core.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div class="bg-grid"></div>
+  <div class="bg-glow"></div>
+  <div id="app"></div>
+
+  <script type="module">
+    import { html, render, h, Component, useState, useEffect, useRef, useMemo, useCallback, useReducer, useContext, createContext } from '/core/vendor/preact-htm.js';
+
+    // ── Telegram WebApp detection ──
+    const tg = window.Telegram?.WebApp;
+    let initData = '';
+    let browserMode = false;
+
+    if (tg && tg.initData) {
+      tg.ready();
+      tg.expand();
+      document.body.classList.add('tg-theme');
+      initData = tg.initData;
+    } else {
+      browserMode = true;
+    }
+
+    // ── Shared helpers ──
+    function fmtBytes(b) {
+      if (b >= 1073741824) return (b / 1073741824).toFixed(1) + ' GB';
+      if (b >= 1048576) return (b / 1048576).toFixed(0) + ' MB';
+      return (b / 1024).toFixed(0) + ' KB';
+    }
+    function fmtUptime(s) {
+      const d = Math.floor(s / 86400), hr = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+      if (d > 0) return d + 'd ' + hr + 'h ' + m + 'm';
+      if (hr > 0) return hr + 'h ' + m + 'm';
+      return m + 'm';
+    }
+    function barColor(pct) { return pct < 50 ? 'var(--green)' : pct < 80 ? 'var(--yellow)' : 'var(--red)'; }
+    function barBg(pct) { return pct < 50 ? 'var(--green-dim)' : pct < 80 ? 'var(--yellow-dim)' : 'var(--red-dim)'; }
+    function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    function shortModel(m) { return m ? m.replace('anthropic/','').replace('google/','').replace(/-2025\d{4}/g,'') : ''; }
+
+    // Make helpers available globally for legacy panels
+    window.fmtBytes = fmtBytes;
+    window.fmtUptime = fmtUptime;
+    window.barColor = barColor;
+    window.barBg = barBg;
+    window.escHtml = escHtml;
+    window.shortModel = shortModel;
+
+    // ── Error Boundary ──
+    class ErrorBoundary extends Component {
+      constructor(props) {
+        super(props);
+        this.state = { error: null };
+      }
+      static getDerivedStateFromError(error) {
+        return { error };
+      }
+      componentDidCatch(error, info) {
+        console.error(`[Panel Error] ${this.props.panelId}:`, error);
+      }
+      render() {
+        if (this.state.error) {
+          return html`<div style="color: var(--red); padding: 12px; font-size: 12px;">
+            <div style="font-weight: 600;">Panel Error</div>
+            <div style="margin-top: 4px; color: var(--text-dim);">${this.state.error.message || 'Unknown error'}</div>
+          </div>`;
+        }
+        return this.props.children;
+      }
+    }
+
+    // ── Data Caching ──
+    const CACHE_KEY = 'clawboard-cache';
+    const CACHE_TTL = 60000; // 60 seconds
+
+    function saveCache(panelData) {
+      const payload = JSON.stringify({ ts: Date.now(), panels: panelData });
+      const tgStorage = tg?.DeviceStorage;
+      if (tgStorage) {
+        try { tgStorage.setItem(CACHE_KEY, payload); } catch {}
+      }
+      try { localStorage.setItem(CACHE_KEY, payload); } catch {}
+    }
+
+    function loadCache(callback) {
+      function tryParse(value) {
+        if (!value) return null;
+        try {
+          const cache = JSON.parse(value);
+          if (cache && (Date.now() - cache.ts) < CACHE_TTL) return cache.panels;
+        } catch {}
+        return null;
+      }
+
+      const tgStorage = tg?.DeviceStorage;
+      if (tgStorage) {
+        try {
+          tgStorage.getItem(CACHE_KEY, (err, value) => {
+            if (!err && value) {
+              const panels = tryParse(value);
+              if (panels) return callback(panels);
+            }
+            // Fallback to localStorage
+            callback(tryParse(localStorage.getItem(CACHE_KEY)));
+          });
+          return;
+        } catch {}
+      }
+      callback(tryParse(localStorage.getItem(CACHE_KEY)));
+    }
+
+    // ── Auth ──
+    async function checkAuth() {
+      try {
+        const opts = browserMode
+          ? { credentials: 'same-origin' }
+          : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData }) };
+        const res = await fetch('/api/auth', opts);
+        if (!res.ok) { window.location.href = '/'; return null; }
+        return await res.json();
+      } catch {
+        window.location.href = '/';
+        return null;
+      }
+    }
+
+    // ── Panel Loader ──
+    const panelModules = new Map();
+
+    async function loadPanelUI(panelId) {
+      if (panelModules.has(panelId)) return panelModules.get(panelId);
+      try {
+        const mod = await import(`/api/panels/${panelId}/ui.js`);
+        const component = mod.default;
+        panelModules.set(panelId, component);
+        return component;
+      } catch (err) {
+        console.error(`[Panel] Failed to load UI for ${panelId}:`, err);
+        return null;
+      }
+    }
+
+    // ── Panel Wrapper Component ──
+    function PanelCard({ manifest, panelData, panelError, connected, lastUpdate, config: appConfig }) {
+      const [PanelComponent, setPanelComponent] = useState(null);
+      const [loadError, setLoadError] = useState(null);
+
+      useEffect(() => {
+        loadPanelUI(manifest.id).then(comp => {
+          if (comp) setPanelComponent(() => comp);
+          else setLoadError('Failed to load panel UI');
+        });
+      }, [manifest.id]);
+
+      const cls = useCallback((name) => `p-${manifest.id}-${name}`, [manifest.id]);
+
+      const api = useMemo(() => ({
+        fetch: async (url, opts) => {
+          const fetchOpts = browserMode
+            ? { ...opts, credentials: 'same-origin' }
+            : { ...opts, headers: { ...opts?.headers, 'Content-Type': 'application/json' } };
+          if (!browserMode && initData) {
+            fetchOpts.method = fetchOpts.method || 'POST';
+            const body = fetchOpts.body ? JSON.parse(fetchOpts.body) : {};
+            body.initData = initData;
+            fetchOpts.body = JSON.stringify(body);
+          }
+          return fetch(url || `/api/panels/${manifest.id}`, fetchOpts);
+        }
+      }), [manifest.id]);
+
+      const panelConfig = appConfig?.panels?.[manifest.id] || manifest.config || {};
+
+      if (loadError) {
+        return html`<div class="metric-card ${manifest.size === 'full' ? 'full' : ''}">
+          <div style="color: var(--red); padding: 12px; font-size: 12px;">
+            <div style="font-weight: 600;">Panel Load Error</div>
+            <div style="color: var(--text-dim); margin-top: 4px;">${manifest.name}</div>
+          </div>
+        </div>`;
+      }
+
+      if (!PanelComponent) {
+        return html`<div class="metric-card ${manifest.size === 'full' ? 'full' : ''}" style="opacity: 0.5;">
+          <div style="padding: 16px; color: var(--text-dim); font-size: 12px;">Loading ${manifest.name}...</div>
+        </div>`;
+      }
+
+      // For new contract panels (contractVersion set), use Preact component
+      if (manifest.contractVersion) {
+        return html`<div class="metric-card ${manifest.size === 'full' ? 'full' : ''}">
+          <${ErrorBoundary} panelId=${manifest.id}>
+            <${PanelComponent}
+              data=${panelData}
+              error=${panelError}
+              connected=${connected}
+              lastUpdate=${lastUpdate}
+              api=${api}
+              config=${panelConfig}
+              cls=${cls}
+            />
+          <//>
+        </div>`;
+      }
+
+      // Legacy panels — they use window.DashboardPanels, handle separately
+      return html`<div class="metric-card ${manifest.size === 'full' ? 'full' : ''}" id="panel-${manifest.id}">
+        <div style="padding: 16px; color: var(--text-dim); font-size: 12px;">
+          ${manifest.name} (legacy — needs migration)
+        </div>
+      </div>`;
+    }
+
+    // ── Main App ──
+    function App() {
+      const [panels, setPanels] = useState([]);
+      const [config, setConfig] = useState({});
+      const [authData, setAuthData] = useState(null);
+      const [connected, setConnected] = useState(false);
+      const [panelDataMap, setPanelDataMap] = useState({});
+      const [lastUpdateMap, setLastUpdateMap] = useState({});
+      const [lastGlobalUpdate, setLastGlobalUpdate] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const wsRef = useRef(null);
+      const retriesRef = useRef(0);
+      const MAX_RETRIES = 10;
+
+      // Load config
+      useEffect(() => {
+        fetch('/api/config').then(r => r.json()).then(cfg => {
+          setConfig(cfg);
+          document.title = `${cfg.name || 'Agent'} — Dashboard`;
+          if (cfg.accent) {
+            document.documentElement.style.setProperty('--accent', cfg.accent);
+            document.documentElement.style.setProperty('--accent-dim', cfg.accent + '22');
+            document.documentElement.style.setProperty('--accent-glow', cfg.accent + '44');
+          }
+        }).catch(() => {});
+      }, []);
+
+      // Load cached data immediately for fast render
+      useEffect(() => {
+        loadCache((cached) => {
+          if (cached) {
+            setPanelDataMap(prev => {
+              const next = { ...prev };
+              for (const [k, v] of Object.entries(cached)) {
+                if (v !== null && v !== undefined) next[k] = v;
+              }
+              return next;
+            });
+          }
+        });
+      }, []);
+
+      // Auth + load panels
+      useEffect(() => {
+        (async () => {
+          const isMiniApp = !!(window.Telegram?.WebApp?.initData);
+          if (isMiniApp) {
+            // Mini App: skip HTTP auth, start WS immediately
+            setAuthData({ ok: true, miniApp: true });
+            const res = await fetch('/api/panels');
+            const panelList = await res.json();
+            setPanels(panelList);
+            setLoading(false);
+          } else {
+            // Browser: auth + panel list in parallel
+            const [auth, panelRes] = await Promise.all([
+              checkAuth(),
+              fetch('/api/panels')
+            ]);
+            if (!auth) return;
+            setAuthData(auth);
+            const panelList = await panelRes.json();
+            setPanels(panelList);
+            setLoading(false);
+          }
+        })();
+      }, []);
+
+      // WebSocket
+      useEffect(() => {
+        if (!authData) return;
+
+        function connect() {
+          const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const ws = new WebSocket(`${proto}//${location.host}/ws/metrics`);
+          wsRef.current = ws;
+
+          ws.onopen = () => {
+            retriesRef.current = 0;
+            setConnected(true);
+            if (initData) {
+              ws.send(JSON.stringify({ type: 'auth', initData }));
+            } else {
+              fetch('/api/auth', { credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(data => {
+                  if (data.ok) ws.send(JSON.stringify({ type: 'auth', cookieAuth: true, user: data.user }));
+                  else ws.close();
+                })
+                .catch(() => ws.close());
+            }
+          };
+
+          ws.onmessage = (e) => {
+            try {
+              const msg = JSON.parse(e.data);
+              if (msg.type === 'auth' && !msg.ok) {
+                window.location.href = '/';
+                return;
+              }
+              if (msg.type === 'metrics') {
+                const now = Date.now();
+                setLastGlobalUpdate(now);
+
+                // Use new panels format if available, fall back to legacy mapping
+                const pd = msg.panels || {};
+                // Also map legacy format for backward compat
+                if (!msg.panels) {
+                  if (msg.data?.cpu) pd.cpu = { load: msg.data.cpu.load, cores: msg.data.cpu.cores };
+                  if (msg.data?.memory) pd.memory = msg.data.memory;
+                  if (msg.data?.disk) pd.disk = msg.data.disk;
+                  if (msg.data) pd.uptime = { uptime: msg.data.uptime, hostname: msg.data.hostname };
+                  if (msg.data?.processes) pd.processes = { ...msg.data.processes, os: msg.data.os };
+                  if (msg.usage) pd['claude-usage'] = msg.usage;
+                  if (msg.crons) pd.crons = msg.crons;
+                  if (msg.agent) pd.models = msg.agent;
+                }
+
+                // Cache panel data for fast reload
+                saveCache(pd);
+
+                setPanelDataMap(prev => {
+                  const next = { ...prev };
+                  for (const [k, v] of Object.entries(pd)) {
+                    if (v !== null && v !== undefined) next[k] = v;
+                  }
+                  return next;
+                });
+
+                setLastUpdateMap(prev => {
+                  const next = { ...prev };
+                  for (const k of Object.keys(pd)) {
+                    if (pd[k] !== null && pd[k] !== undefined) next[k] = now;
+                  }
+                  return next;
+                });
+              }
+            } catch {}
+          };
+
+          ws.onclose = () => {
+            setConnected(false);
+            if (retriesRef.current < MAX_RETRIES) {
+              retriesRef.current++;
+              setTimeout(connect, Math.min(1000 * retriesRef.current, 10000));
+            }
+          };
+
+          ws.onerror = () => ws.close();
+        }
+
+        connect();
+        return () => { if (wsRef.current) wsRef.current.close(); };
+      }, [authData]);
+
+      // Fetch openclaw-status once
+      useEffect(() => {
+        if (!authData || panels.length === 0) return;
+        if (!panels.find(p => p.id === 'openclaw-status')) return;
+
+        const fetchOpts = browserMode
+          ? { credentials: 'same-origin' }
+          : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData }) };
+        fetch('/api/panels/openclaw-status', fetchOpts)
+          .then(r => r.json())
+          .then(data => {
+            if (data && !data.error) {
+              setPanelDataMap(prev => ({ ...prev, 'openclaw-status': data }));
+              setLastUpdateMap(prev => ({ ...prev, 'openclaw-status': Date.now() }));
+            }
+          })
+          .catch(() => {});
+      }, [authData, panels]);
+
+      if (loading) {
+        return html`<div class="container">
+          <div class="loading-screen">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">Initializing systems...</div>
+          </div>
+        </div>`;
+      }
+
+      return html`<div class="container">
+        <!-- Header -->
+        <div class="header">
+          <div class="header-avatar">${config.emoji || '🤖'}</div>
+          <div>
+            <h1>${config.name || 'Dashboard'}</h1>
+            <div class="header-sub">${(config.role || 'AI Agent').toUpperCase()}</div>
+          </div>
+          <div class="header-right">
+            <div class="live-dot ${connected ? '' : 'offline-dot'}"></div>
+            <span class="live-label ${connected ? '' : 'offline-label'}">${connected ? 'LIVE' : 'OFFLINE'}</span>
+            ${browserMode && html`<button class="refresh-btn" onclick=${() => location.href = '/auth/logout'}>Logout</button>`}
+          </div>
+        </div>
+
+        ${!connected && html`<div class="status-banner" style="background: var(--yellow-dim); color: var(--yellow); text-align: center; padding: 8px; border-radius: 8px; margin-bottom: 12px; font-size: 12px;">
+          ⚠ Reconnecting...
+        </div>`}
+
+        <!-- Panel Grid -->
+        <div class="metrics-grid">
+          ${panels.map((manifest, i) => html`
+            <${PanelCard}
+              key=${manifest.id}
+              manifest=${manifest}
+              panelData=${panelDataMap[manifest.id] || null}
+              panelError=${null}
+              connected=${connected}
+              lastUpdate=${lastUpdateMap[manifest.id] || null}
+              config=${config}
+            />
+          `)}
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+          <span>${lastGlobalUpdate ? 'Last update: ' + new Date(lastGlobalUpdate).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : ''}</span><br/>
+          © ${new Date().getFullYear()} ${config.company || ''}
+        </div>
+      </div>`;
+    }
+
+    // Register service worker (browser only, not Mini App)
+    const isMiniApp = !!(tg && tg.initData);
+    if (!isMiniApp && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/public/sw.js').catch(() => {});
+    }
+
+    // Mount
+    render(html`<${App} />`, document.getElementById('app'));
+  </script>
+</body>
+</html>

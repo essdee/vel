@@ -1,0 +1,26 @@
+{
+  "id": "_test",
+  "contractVersion": "1.0",
+  "name": "Test Panel",
+  "description": "Minimal test panel for contract v1.0",
+  "version": "1.0.0",
+  "author": "core",
+  "position": 99,
+  "size": "half",
+  "refreshMs": 5000,
+  "requires": [],
+  "capabilities": ["fetch"],
+  "dataSchema": {
+    "type": "object",
+    "properties": {
+      "message": { "type": "string" },
+      "ts": { "type": "number" }
+    },
+    "required": ["message", "ts"]
+  },
+  "rateLimit": {
+    "windowMs": 60000,
+    "max": 30
+  },
+  "config": {}
+}
