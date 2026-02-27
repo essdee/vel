@@ -1,10 +1,10 @@
 # Vel — Roadmap
 
-Each version adds one layer. Panels and plugins written for v0.1 will work in v0.5.
+Each version adds one layer. Panels and plugins written for v0.1.0 will work in v5.
 
 ---
 
-### v0.1 — Panel Framework ✅ CURRENT
+### v0.1.0 — Panel Framework ✅ CURRENT
 **Adds:** Panel architecture, hook engine, plugin system, Telegram auth, config-driven personality
 
 **You can build:** Real-time dashboards, monitoring panels, status pages, agent UIs
@@ -20,8 +20,20 @@ Each version adds one layer. Panels and plugins written for v0.1 will work in v0
 
 ---
 
-### v0.2 — Store + Forms
-**Adds:** SQLite store, form rendering, CRUD operations
+### v1.0 — Stable Release
+**Adds:** Stable API, production-ready, battle-tested contracts
+
+**You can build:** Everything from v0.1.0 with confidence it won't break
+
+- API surface locked — contractVersion 1.0 is final
+- Performance hardened
+- Documentation complete
+- CI/CD pipeline solid
+
+---
+
+### v2 — Store + Forms
+**Adds:** SQLite store, form rendering, CRUD operations, `vel doctor` CLI
 
 **You can build:** Todo apps, trackers, note-taking, simple data management
 
@@ -33,7 +45,7 @@ Each version adds one layer. Panels and plugins written for v0.1 will work in v0
 
 ---
 
-### v0.3 — Pages + Routing
+### v3 — Pages + Routing
 **Adds:** Multi-page apps, sidebar navigation, URL routing
 
 **You can build:** Multi-page apps, wikis, project management tools
@@ -46,7 +58,7 @@ Each version adds one layer. Panels and plugins written for v0.1 will work in v0
 
 ---
 
-### v0.4 — Roles + Permissions
+### v4 — Roles + Permissions
 **Adds:** Role-based access control
 
 **You can build:** Team workspaces, shared apps, basic ERP
@@ -58,7 +70,7 @@ Each version adds one layer. Panels and plugins written for v0.1 will work in v0
 
 ---
 
-### v0.5 — Events + Files
+### v5 — Events + Files
 **Adds:** Inter-panel communication, file handling, search, notifications
 
 **You can build:** Full ERP, CRM, document management, business apps
@@ -76,4 +88,4 @@ Each version adds one layer. Panels and plugins written for v0.1 will work in v0
 1. **Config over code** — Users customize via config.json, never edit core/
 2. **Convention over configuration** — Predictable file locations, consistent contracts
 3. **AI-agent-first** — Manifest-driven, validation built in, zero build step
-4. **Forward compatible** — v0.1 plugins work in v0.5 without changes
+4. **Forward compatible** — v0.1.0 plugins work in v5 without changes

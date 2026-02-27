@@ -70,7 +70,7 @@ Each decision includes what would make us change our mind. Architecture should e
 
 ---
 
-### Why SQLite for store (planned v0.2)
+### Why SQLite for store (planned v2)
 
 **Decision:** SQLite as default store, adapter pattern for alternatives.
 
@@ -106,7 +106,7 @@ Each decision includes what would make us change our mind. Architecture should e
 
 **Why:** Documentation and code are separate artifacts describing the same truth. They drift. The solution: make validation rules in code the single source of truth. Multiple consumers (startup validation, doctor CLI, introspection API) read the same rules. Drift becomes architecturally impossible.
 
-**Growth path:** v0.1 = Elm-quality errors. v0.2 = extract to schema packages + doctor CLI. v0.3 = `/api/schema` introspection. Each version adds a package. No version changes the architecture.
+**Growth path:** v0.1.0 = Elm-quality errors. v2 = extract to schema packages + doctor CLI. v3 = `/api/schema` introspection. Each version adds a package. No version changes the architecture.
 
 **Would change if:** The validation contract (`{ level, message, fix, ref }`) proves insufficient for a new concern.
 

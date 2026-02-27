@@ -59,7 +59,7 @@ Panel data is served by Go handlers in `internal/data/`. There are no per-panel 
 | `size` | ✅ | `"half"` or `"full"` |
 | `refreshMs` | ✅ | Min 1000, max 300000 |
 | `requires` | ✅ | Dependency IDs. Empty array = none |
-| `capabilities` | ✅ | What the panel needs from `api` prop: `["fetch"]` for v0.1. `["fetch", "store"]` for v0.2+. Core validates against current version. |
+| `capabilities` | ✅ | What the panel needs from `api` prop: `["fetch"]` for v0.1.0. `["fetch", "store"]` for v2+. Core validates against current version. |
 | `dataSchema` | ✅ | JSON Schema for panel data response. Validated at startup + TEST_MODE. |
 | `rateLimit` | ❌ | Per-panel rate limit. Default: 30/min |
 | `config` | ❌ | Custom config, accessible via `config.panels.{id}` |
@@ -87,7 +87,7 @@ export default function CpuPanel({ data, error, connected, lastUpdate, api, conf
 | `error` | `{error: string, code?: string, retry?: boolean}\|null` | Error from data handler or core. |
 | `connected` | `boolean` | WebSocket alive? |
 | `lastUpdate` | `number\|null` | Timestamp (ms) of last data push. |
-| `api` | `object` | Injected helpers. v0.1: `{ fetch }`. v0.2+: adds `store`. v0.3+: adds `navigate`. |
+| `api` | `object` | Injected helpers. v0.1.0: `{ fetch }`. v2+: adds `store`. v3+: adds `navigate`. |
 | `config` | `object` | Panel config from `config.panels.{id}`. |
 | `cls` | `(name) => string` | Scoped class helper. `cls('metric')` → `'p-cpu-metric'`. |
 
@@ -204,7 +204,7 @@ The `refreshMs` field in manifest.json is part of the contract but currently has
 
 These are **non-breaking** and may happen in minor versions:
 
-1. **New `api` prop methods** — v0.2 adds `store`, v0.3 adds `navigate`. Panels that don't use new methods are unaffected.
+1. **New `api` prop methods** — v2 adds `store`, v3 adds `navigate`. Panels that don't use new methods are unaffected.
 2. **New reserved route prefixes** — Core may reserve new prefixes.
 3. **New CSS variables** — Existing variables won't change names.
 4. **Vendor bundle growth** — Existing imports remain stable.

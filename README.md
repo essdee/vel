@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0-c9a84c?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.1.0--alpha-c9a84c?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square" alt="Go">
   <img src="https://img.shields.io/badge/TTFB-4ms-brightgreen?style=flat-square" alt="TTFB">
   <img src="https://img.shields.io/badge/RAM-2.6MB-brightgreen?style=flat-square" alt="RAM">
@@ -305,11 +305,12 @@ CI enforces tests + docs on every PR. See [`TESTING.md`](./TESTING.md).
 
 See [`ROADMAP.md`](./ROADMAP.md) for the full version plan.
 
-- **v0.1** ✅ — Panels, hooks, plugins, auth, config
-- **v0.2** — SQLite store, forms, CRUD
-- **v0.3** — Pages, routing, navigation
-- **v0.4** — Roles, permissions
-- **v0.5** — Events, files, search
+- **v0.1.0** ✅ — Panels, hooks, plugins, auth, config (current)
+- **v1.0** — Stable API, production-ready dashboard apps
+- **v2** — SQLite store, forms, CRUD
+- **v3** — Pages, routing, navigation
+- **v4** — Roles, permissions
+- **v5** — Events, files, search
 
 ---
 
