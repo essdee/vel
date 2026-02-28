@@ -447,6 +447,7 @@ func NewServer(cfg *Config) http.Handler {
 	mux.HandleFunc("/relay/ws", rl.HandleBrowserWS)
 	mux.HandleFunc("/relay/cdp", rl.HandleAgentWS)
 	mux.HandleFunc("/relay/download", rl.HandleDownload)
+	mux.HandleFunc("/relay/bridge", rl.HandleBridge)
 	mux.HandleFunc("/relay/status", rl.HandleStatus)
 	mux.HandleFunc("/relay/pair/new", rl.HandlePairNew)
 	mux.HandleFunc("/relay/pair/status", rl.HandlePairStatus)
