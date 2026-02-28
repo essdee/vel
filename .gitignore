@@ -7,8 +7,8 @@ config.json
 
 # Binary
 vell
+/vel
 
 # OS
 .DS_Store
 Thumbs.db
-vel

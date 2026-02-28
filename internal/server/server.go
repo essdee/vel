@@ -20,7 +20,7 @@ import (
 	"vel/internal/datasource"
 	"vel/internal/hooks"
 	"vel/internal/panels"
-	"vel/internal/relay"
+	vel "vel/pkg/vel"
 )
 
 type Config struct {
@@ -440,25 +440,18 @@ func NewServer(cfg *Config) http.Handler {
 		writeJSON(w, state)
 	})
 
-	// Browser Relay
-	rl := relay.New()
-	mux.HandleFunc("/relay/token", rl.HandleToken)
-	mux.HandleFunc("/relay/json", rl.HandleTargets)
-	mux.HandleFunc("/relay/ws", rl.HandleBrowserWS)
-	mux.HandleFunc("/relay/cdp", rl.HandleAgentWS)
-	mux.HandleFunc("/relay/download", rl.HandleDownload)
-	mux.HandleFunc("/relay/bridge", rl.HandleBridge)
-	mux.HandleFunc("/relay/status", rl.HandleStatus)
-	mux.HandleFunc("/relay/pair/new", rl.HandlePairNew)
-	mux.HandleFunc("/relay/pair/status", rl.HandlePairStatus)
-	mux.HandleFunc("/relay/pair/activate", rl.HandlePairActivate)
-	// CDP-compatible endpoints (for OpenClaw / standard CDP clients)
-	mux.HandleFunc("/relay/cdp/json/version", rl.HandleCDPJsonVersion)
-	mux.HandleFunc("/relay/cdp/json/list", rl.HandleCDPJsonList)
-	mux.HandleFunc("/relay/cdp/ws", rl.HandleCDPProxyWS)
-	mux.HandleFunc("/relay/cdp/status", rl.HandleCDPStatusJSON)
-	// Launcher <-> bridge coordination
-	mux.HandleFunc("/relay/cdp-info", rl.HandleCDPInfo)
+	// App-registered server routes
+	for _, reg := range vel.GetRegistrations() {
+		appDir := ""
+		for _, app := range cfg.Apps {
+			if app.Name == reg.Name {
+				appDir = app.Dir
+				break
+			}
+		}
+		appCfg := vel.AppConfig{Name: reg.Name, Dir: appDir, Workspace: cfg.Workspace}
+		reg.Register(mux, appCfg)
+	}
 
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {

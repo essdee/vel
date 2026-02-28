@@ -30,7 +30,7 @@ var Tier1Packages = map[string]bool{
 	"encoding/base64": true, "encoding/hex": true,
 	"crypto/sha256": true, "crypto/sha512": true, "crypto/md5": true,
 	"crypto/hmac": true, "crypto/rand": true,
-	"github.com/essdee/vel/pkg/vel": true,
+	"vel/pkg/vel": true,
 }
 
 // BlacklistedPackages are never allowed.
@@ -70,10 +70,11 @@ type AppManifest struct {
 
 // AppBuildInfo holds info about an app with Go code.
 type AppBuildInfo struct {
-	Name     string
-	Dir      string
-	GoFiles  []string
-	Manifest *AppManifest
+	Name      string
+	Dir       string
+	GoFiles   []string
+	Manifest  *AppManifest
+	HasServer bool
 }
 
 // Violation represents an import policy violation.
@@ -246,8 +247,22 @@ func discoverApps(rootDir string) ([]AppBuildInfo, error) {
 		appDir := filepath.Join(appsDir, entry.Name())
 
 		goFiles, _ := filepath.Glob(filepath.Join(appDir, "*.go"))
+		// Also look in server/ subdirectory
+		serverGoFiles, _ := filepath.Glob(filepath.Join(appDir, "server", "*.go"))
+		goFiles = append(goFiles, serverGoFiles...)
+		// And any other subdirectories
 		subGoFiles, _ := filepath.Glob(filepath.Join(appDir, "**", "*.go"))
 		goFiles = append(goFiles, subGoFiles...)
+		// Deduplicate
+		seen := make(map[string]bool)
+		var uniqueFiles []string
+		for _, f := range goFiles {
+			if !seen[f] {
+				seen[f] = true
+				uniqueFiles = append(uniqueFiles, f)
+			}
+		}
+		goFiles = uniqueFiles
 		if len(goFiles) == 0 {
 			continue
 		}
@@ -262,10 +277,11 @@ func discoverApps(rootDir string) ([]AppBuildInfo, error) {
 		}
 
 		apps = append(apps, AppBuildInfo{
-			Name:     manifest.Name,
-			Dir:      appDir,
-			GoFiles:  goFiles,
-			Manifest: &manifest,
+			Name:       manifest.Name,
+			Dir:        appDir,
+			GoFiles:    goFiles,
+			Manifest:   &manifest,
+			HasServer:  len(serverGoFiles) > 0,
 		})
 	}
 	return apps, nil
@@ -354,7 +370,21 @@ func generateMainGo(apps []AppBuildInfo, opts Options) string {
 	b.WriteString("import (\n")
 
 	for _, app := range apps {
-		b.WriteString(fmt.Sprintf("\t_ \"vel/apps/%s\"\n", app.Name))
+		// Only import root package if there are root-level Go files
+		hasRootGo := false
+		for _, f := range app.GoFiles {
+			rel, _ := filepath.Rel(app.Dir, f)
+			if !strings.Contains(rel, string(filepath.Separator)) {
+				hasRootGo = true
+				break
+			}
+		}
+		if hasRootGo {
+			b.WriteString(fmt.Sprintf("\t_ \"vel/apps/%s\"\n", app.Name))
+		}
+		if app.HasServer {
+			b.WriteString(fmt.Sprintf("\t_ \"vel/apps/%s/server\"\n", app.Name))
+		}
 	}
 
 	b.WriteString(")\n\n")
@@ -381,6 +411,18 @@ func setupBuildModule(rootDir, buildDir string) error {
 			return err
 		}
 	}
+
+	// Symlink internal/ and pkg/ so app code can import vel packages
+	for _, dir := range []string{"internal", "pkg"} {
+		src := filepath.Join(rootDir, dir)
+		dst := filepath.Join(buildDir, dir)
+		if _, err := os.Stat(src); err == nil {
+			if err := os.Symlink(src, dst); err != nil {
+				return fmt.Errorf("symlinking %s: %w", dir, err)
+			}
+		}
+	}
+
 	return nil
 }
 
