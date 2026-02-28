@@ -178,6 +178,7 @@ const bridgeHTML = `<!DOCTYPE html>
       !t.url.startsWith('chrome://') &&
       !t.url.startsWith('chrome-extension://') &&
       !t.url.includes('openclaw-bridge-') &&
+      !t.url.startsWith('devtools://') &&
       t.url !== '' &&
       t.url !== 'about:blank'
     );
@@ -434,17 +435,30 @@ sed -i "s|__RELAY_URL__|$WS_URL|g" "$BRIDGE"
 sed -i "s|__RELAY_TOKEN__|$RELAY_TOKEN|g" "$BRIDGE"
 sed -i "s|__BROWSER_WS_URL__|$BROWSER_WS|g" "$BRIDGE"
 
-# Navigate the about:blank tab to the bridge page
-TAB_ID=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
+# Open bridge in the CDP Chrome (not default browser)
+# First try: navigate the about:blank tab to the bridge file
+TAB_ID=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"id": *"[^"]*"' | head -1 | cut -d'"' -f4)
 if [ -n "$TAB_ID" ]; then
-    # Use CDP Page.navigate via WebSocket is complex; use /json/navigate instead
-    curl -s "http://127.0.0.1:9222/json/activate/$TAB_ID" > /dev/null 2>&1
+    # Navigate existing tab to bridge page using /json endpoint
+    curl -s "http://127.0.0.1:9222/json/navigate/$TAB_ID?file://$BRIDGE" > /dev/null 2>&1
 fi
-
-# Open bridge file - try multiple methods
-xdg-open "file://$BRIDGE" 2>/dev/null || \
-sensible-browser "file://$BRIDGE" 2>/dev/null || \
-echo "⚠️  Please open this file in Chrome: file://$BRIDGE"
+# Verify it worked by checking if tab URL changed
+sleep 1
+TAB_URL=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"url": *"[^"]*"' | head -1 | cut -d'"' -f4)
+if echo "$TAB_URL" | grep -q "openclaw-bridge"; then
+    echo "✅ Bridge loaded in Chrome"
+else
+    # Fallback: open as new tab
+    curl -s "http://127.0.0.1:9222/json/new?file://$BRIDGE" > /dev/null 2>&1
+    sleep 1
+    TAB_URL=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"url": *"file[^"]*bridge[^"]*"' | head -1)
+    if [ -n "$TAB_URL" ]; then
+        echo "✅ Bridge loaded in Chrome"
+    else
+        # Last resort: xdg-open (may open in wrong profile)
+        xdg-open "file://$BRIDGE" 2>/dev/null || echo "⚠️  Open in Chrome: file://$BRIDGE"
+    fi
+fi
 
 echo "✅ Browser ready! Keep this terminal open."
 echo "   Close browser window to stop."
