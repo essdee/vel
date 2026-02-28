@@ -423,13 +423,13 @@ func (rl *Relay) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	switch platform {
 	case "linux":
 		script = generateLinuxScript(userName, relayURL, token)
-		filename = fmt.Sprintf("OpenClaw Browser - %s.sh", userName)
+		filename = fmt.Sprintf("OpenClaw Browser - %s - Ram.sh", userName)
 	case "mac":
 		script = generateMacScript(userName, relayURL, token)
-		filename = fmt.Sprintf("OpenClaw Browser - %s.command", userName)
+		filename = fmt.Sprintf("OpenClaw Browser - %s - Ram.command", userName)
 	case "windows":
 		script = generateWindowsScript(userName, relayURL, token)
-		filename = fmt.Sprintf("OpenClaw Browser - %s.bat", userName)
+		filename = fmt.Sprintf("OpenClaw Browser - %s - Ram.bat", userName)
 	default:
 		http.Error(w, "Invalid platform. Use: linux, mac, windows", 400)
 		return
