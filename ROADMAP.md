@@ -21,7 +21,7 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 ---
 
 ### v1.0 — Data & CLI (in progress)
-**Adds:** Stable app.json contract, data sources, task scheduler, `vel` CLI
+**Adds:** Stable app.json contract, data sources, task scheduler, `vel` CLI, app Go server code
 
 **You can build:** Dashboard apps with live data from files, Go code, and HTTP APIs
 
@@ -32,6 +32,9 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 - ✅ `vel build` CLI — scans apps, checks capabilities, compiles binary
 - ✅ `vel start` subcommand — server startup with --port flag
 - ✅ Capability system — tier 1/2/3, blacklist, third-party scanning
+- ✅ Apps can ship Go server code — `server/` directory, compiled via `vel build`
+- ✅ Public API (`pkg/vel/`) — `RegisterApp`, `AppConfig`, auth helpers
+- ✅ `vel caps` CLI — list/export app capabilities
 - Task scheduler — periodic background jobs (pending)
 - Ready for third-party dashboard apps
 

@@ -161,6 +161,80 @@ git clone https://github.com/someone/vel-app-docker docker
 
 App panels discovered from `apps/*/panels/*/manifest.json`.
 
+**If the app has Go server code** (a `server/` directory), you must run `vel build` to compile it into the binary:
+
+```bash
+cd /path/to/vel
+./vel build
+```
+
+Check `app.json` for a `"server"` field to know if this is needed.
+
+---
+
+## 5b. Create an App with Go Server Code
+
+Apps can ship Go server code in a `server/` directory. This lets apps register HTTP routes, WebSocket handlers, etc.
+
+### app.json
+
+```json
+{
+  "name": "my-app",
+  "version": "1.0.0",
+  "panels": "panels",
+  "server": {
+    "package": "server"
+  },
+  "capabilities": {
+    "net": {}
+  }
+}
+```
+
+### server/register.go
+
+```go
+package server
+
+import (
+    "net/http"
+    vel "vel/pkg/vel"
+)
+
+func init() {
+    vel.RegisterApp(vel.AppRegistration{
+        Name:     "my-app",
+        Register: Register,
+    })
+}
+
+func Register(mux *http.ServeMux, cfg vel.AppConfig) {
+    mux.HandleFunc("/my-app/hello", func(w http.ResponseWriter, r *http.Request) {
+        user := vel.Check(r) // auth check
+        if user == nil {
+            http.Error(w, "Unauthorized", 401)
+            return
+        }
+        w.Write([]byte("Hello!"))
+    })
+}
+```
+
+### Build and run
+
+```bash
+./vel build   # compiles app server code into binary
+./vel start   # or just ./vel
+```
+
+**Public API** (`vel/pkg/vel`):
+- `vel.RegisterApp(reg)` — register routes from `init()`
+- `vel.Check(r)` — get authenticated user from request
+- `vel.IsAllowed(id)` — check if user ID is allowed
+- `vel.CheckBotToken(token)` — validate bot token
+- `vel.GetBotToken()` — get configured bot token
+
 ---
 
 ## 6. Create a Theme
