@@ -217,6 +217,11 @@ func Check(r *http.Request) *User {
 	return nil
 }
 
+// GetBotToken returns the configured bot token.
+func GetBotToken() string {
+	return botToken
+}
+
 // CheckBotToken validates a token against the bot token.
 func CheckBotToken(token string) bool {
 	return token != "" && token == botToken

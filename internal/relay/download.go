@@ -1,13 +1,52 @@
 package relay
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+
+	"vel/internal/auth"
 )
 
+var (
+	cachedBotUsername string
+	botUsernameMu     sync.Mutex
+)
+
+// getBotUsername fetches the bot username from Telegram API (cached after first call).
 func getBotUsername() string {
-	return "EmpRamBot"
+	botUsernameMu.Lock()
+	defer botUsernameMu.Unlock()
+
+	if cachedBotUsername != "" {
+		return cachedBotUsername
+	}
+
+	token := auth.GetBotToken()
+	if token == "" {
+		return "bot"
+	}
+
+	resp, err := http.Get("https://api.telegram.org/bot" + token + "/getMe")
+	if err != nil {
+		return "bot"
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Username string `json:"username"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || !result.OK {
+		return "bot"
+	}
+
+	cachedBotUsername = result.Result.Username
+	return cachedBotUsername
 }
 
 func deriveBaseURL(r *http.Request) string {
