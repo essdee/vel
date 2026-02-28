@@ -1,10 +1,10 @@
 # Vel — Roadmap
 
-Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.0.
+Pre-release until all planned features are complete. v1.0 ships when everything through v0.6 is done.
 
 ---
 
-### v0.1.0 — Panel Framework ✅ CURRENT
+### v0.1 — Panel Framework ✅ CURRENT
 **Adds:** Panel architecture, hook engine, app system, Telegram auth, config-driven personality
 
 **You can build:** Real-time dashboards, monitoring panels, status pages, agent UIs
@@ -20,7 +20,7 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 
 ---
 
-### v1.0 — Data & CLI (in progress)
+### v0.2 — Data & CLI (in progress)
 **Adds:** Stable app.json contract, data sources, task scheduler, `vel` CLI, app Go server code
 
 **You can build:** Dashboard apps with live data from files, Go code, and HTTP APIs
@@ -40,7 +40,7 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 
 ---
 
-### v2.0 — Models & Storage
+### v0.3 — Models & Storage
 **Adds:** SQLite models, auto-CRUD API, migrations
 
 **You can build:** Todo apps, trackers, note-taking, simple data management
@@ -52,7 +52,7 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 
 ---
 
-### v3.0 — Pages & Scripting
+### v0.4 — Pages & Scripting
 **Adds:** Multi-page apps, forms, list views, Go scripting
 
 **You can build:** Multi-page apps, wikis, project management tools
@@ -65,7 +65,7 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 
 ---
 
-### v4.0 — Roles & Permissions
+### v0.5 — Roles & Permissions
 **Adds:** Role-based access control, row-level security
 
 **You can build:** Team workspaces, shared apps, basic ERP
@@ -77,7 +77,7 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 
 ---
 
-### v5.0 — Events & Platform
+### v0.6 — Events & Platform
 **Adds:** Inter-panel events, search, file uploads, notifications, print
 
 **You can build:** Full ERP, CRM, document management, business apps
@@ -90,7 +90,13 @@ Each version adds one layer. Panels and apps written for v0.1.0 will work in v5.
 
 ---
 
-## After v5.0
+### v1.0 — Stable Release
+
+All features from v0.1–v0.6 battle-tested and stable. Public release.
+
+---
+
+## After v1.0
 
 Port ERPNext modules as Vel apps — HR, inventory, accounting, CRM — each as an independent app.json package.
 
@@ -101,4 +107,4 @@ Port ERPNext modules as Vel apps — HR, inventory, accounting, CRM — each as 
 1. **Config over code** — Users customize via config.json, never edit core/
 2. **Convention over configuration** — Predictable file locations, consistent contracts
 3. **AI-agent-first** — Manifest-driven, validation built in, zero build step
-4. **Forward compatible** — v0.1.0 apps work in v5.0 without changes
+4. **Forward compatible** — v0.1 apps work in v1.0 without changes
