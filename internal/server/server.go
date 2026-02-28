@@ -439,6 +439,7 @@ func NewServer(cfg *Config) http.Handler {
 	mux.HandleFunc("/relay/ws", rl.HandleBrowserWS)
 	mux.HandleFunc("/relay/cdp", rl.HandleAgentWS)
 	mux.HandleFunc("/relay/download", rl.HandleDownload)
+	mux.HandleFunc("/relay/status", rl.HandleStatus)
 
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {

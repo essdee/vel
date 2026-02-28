@@ -238,6 +238,52 @@ func (rl *Relay) HandleAgentWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleStatus returns relay status for the dashboard panel.
+func (rl *Relay) HandleStatus(w http.ResponseWriter, r *http.Request) {
+	user := auth.Check(r)
+	if user == nil {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	token := rl.sessions.GetOrCreateToken(user.ID)
+	sess := rl.sessions.GetByToken(token)
+	if sess == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"state": "disconnected"})
+		return
+	}
+	sess.mu.Lock()
+	browserConnected := sess.BrowserWS != nil
+	agentConnected := sess.AgentWS != nil
+	connAt := sess.ConnectedAt
+	msgCount := sess.MsgCount
+	var activeTab string
+	if len(sess.Targets) > 0 {
+		activeTab = sess.Targets[0].Title
+	}
+	sess.mu.Unlock()
+
+	state := "disconnected"
+	if browserConnected && agentConnected {
+		state = "agent_active"
+	} else if browserConnected {
+		state = "connected"
+	}
+
+	resp := map[string]interface{}{
+		"state":    state,
+		"msgCount": msgCount,
+	}
+	if browserConnected {
+		resp["connectedSince"] = connAt.Format(time.RFC3339)
+	}
+	if agentConnected && activeTab != "" {
+		resp["activeTab"] = activeTab
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
 // keepalive sends ping every 30s.
 func (rl *Relay) keepalive(sess *RelaySession, conn *websocket.Conn, isBrowser bool) {
 	ticker := time.NewTicker(30 * time.Second)
