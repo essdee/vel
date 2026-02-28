@@ -185,6 +185,11 @@ const bridgeHTML = `<!DOCTYPE html>
   }
 
   function connectBrowser() {
+    // If WS URL is placeholder, wait for launcher to inject it and reload
+    if (BROWSER_WS === '__SELF_DISCOVER__') {
+      setStatus('⏳', 'Waiting for CDP...', 'Launcher will reload this page shortly');
+      return;
+    }
     setStatus('🔗', 'Connecting to browser...', '');
     browserWS = new WebSocket(BROWSER_WS);
 
@@ -400,22 +405,35 @@ if [ -z "$RELAY_TOKEN" ]; then
     echo "✅ Paired!"
 fi
 
-# Launch Chrome with CDP in background, suppress stderr
+# Prepare bridge HTML before launching Chrome
+# We need the browser WS URL, but we don't have it yet.
+# The bridge will discover it via fetch to localhost:9222/json/version.
+# So we inject relay URL/token now, and use __SELF_DISCOVER__ for browser WS.
+BRIDGE=$(mktemp /tmp/openclaw-bridge-XXXXX.html)
+curl -s "$SERVER/relay/bridge" > "$BRIDGE"
+sed -i "s|__RELAY_URL__|$WS_URL|g" "$BRIDGE"
+sed -i "s|__RELAY_TOKEN__|$RELAY_TOKEN|g" "$BRIDGE"
+# Browser WS URL will be discovered after Chrome starts — inject placeholder
+sed -i "s|__BROWSER_WS_URL__|__SELF_DISCOVER__|g" "$BRIDGE"
+
+# Launch Chrome with CDP and bridge as startup page
 echo "🌐 Launching browser..."
-"$CHROME" --remote-debugging-port=9222 '--remote-allow-origins=*' --user-data-dir="$HOME/OpenClawBrowser" --no-first-run about:blank 2>/dev/null &
+"$CHROME" \
+    --remote-debugging-port=9222 \
+    '--remote-allow-origins=*' \
+    --user-data-dir="$HOME/OpenClawBrowser" \
+    --no-first-run \
+    "file://$BRIDGE" 2>/dev/null &
 BROWSER_PID=$!
 
-# Wait for CDP to be ready and get browser WS URL
+# Wait for CDP to be ready
 echo -n "⏳ Waiting for CDP"
-BROWSER_WS=""
 for i in $(seq 1 30); do
     sleep 1
     VJSON=$(curl -s http://127.0.0.1:9222/json/version 2>/dev/null)
     if [ -n "$VJSON" ]; then
         BROWSER_WS=$(echo "$VJSON" | grep -o '"webSocketDebuggerUrl": *"[^"]*"' | head -1 | cut -d'"' -f4)
-        if [ -n "$BROWSER_WS" ]; then
-            break
-        fi
+        if [ -n "$BROWSER_WS" ]; then break; fi
     fi
     echo -n "."
 done
@@ -424,40 +442,17 @@ echo ""
 if [ -z "$BROWSER_WS" ]; then
     echo "❌ Chrome CDP not responding on port 9222"
     kill $BROWSER_PID 2>/dev/null
+    rm -f "$BRIDGE"
     exit 1
 fi
-echo "✅ CDP ready: $BROWSER_WS"
+echo "✅ CDP ready"
 
-# Download bridge template from server and inject tokens
-BRIDGE=$(mktemp /tmp/openclaw-bridge-XXXXX.html)
-curl -s "$SERVER/relay/bridge" > "$BRIDGE"
-sed -i "s|__RELAY_URL__|$WS_URL|g" "$BRIDGE"
-sed -i "s|__RELAY_TOKEN__|$RELAY_TOKEN|g" "$BRIDGE"
-sed -i "s|__BROWSER_WS_URL__|$BROWSER_WS|g" "$BRIDGE"
-
-# Open bridge in the CDP Chrome (not default browser)
-# First try: navigate the about:blank tab to the bridge file
+# Now inject the real browser WS URL and reload the bridge
+sed -i "s|__SELF_DISCOVER__|$BROWSER_WS|g" "$BRIDGE"
+# Reload the bridge tab so it picks up the WS URL
 TAB_ID=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"id": *"[^"]*"' | head -1 | cut -d'"' -f4)
 if [ -n "$TAB_ID" ]; then
-    # Navigate existing tab to bridge page using /json endpoint
     curl -s "http://127.0.0.1:9222/json/navigate/$TAB_ID?file://$BRIDGE" > /dev/null 2>&1
-fi
-# Verify it worked by checking if tab URL changed
-sleep 1
-TAB_URL=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"url": *"[^"]*"' | head -1 | cut -d'"' -f4)
-if echo "$TAB_URL" | grep -q "openclaw-bridge"; then
-    echo "✅ Bridge loaded in Chrome"
-else
-    # Fallback: open as new tab
-    curl -s "http://127.0.0.1:9222/json/new?file://$BRIDGE" > /dev/null 2>&1
-    sleep 1
-    TAB_URL=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"url": *"file[^"]*bridge[^"]*"' | head -1)
-    if [ -n "$TAB_URL" ]; then
-        echo "✅ Bridge loaded in Chrome"
-    else
-        # Last resort: xdg-open (may open in wrong profile)
-        xdg-open "file://$BRIDGE" 2>/dev/null || echo "⚠️  Open in Chrome: file://$BRIDGE"
-    fi
 fi
 
 echo "✅ Browser ready! Keep this terminal open."
@@ -523,12 +518,24 @@ if [ -z "$RELAY_TOKEN" ]; then
     echo "✅ Paired!"
 fi
 
+# Prepare bridge HTML before launching Chrome
+BRIDGE=$(mktemp /tmp/openclaw-bridge-XXXXX.html)
+curl -s "$SERVER/relay/bridge" > "$BRIDGE"
+sed -i '' "s|__RELAY_URL__|$WS_URL|g" "$BRIDGE"
+sed -i '' "s|__RELAY_TOKEN__|$RELAY_TOKEN|g" "$BRIDGE"
+sed -i '' "s|__BROWSER_WS_URL__|__SELF_DISCOVER__|g" "$BRIDGE"
+
+# Launch Chrome with CDP and bridge as startup page
 echo "🌐 Launching browser..."
-"$CHROME" --remote-debugging-port=9222 '--remote-allow-origins=*' --user-data-dir="$HOME/OpenClawBrowser" --no-first-run about:blank 2>/dev/null &
+"$CHROME" \
+    --remote-debugging-port=9222 \
+    '--remote-allow-origins=*' \
+    --user-data-dir="$HOME/OpenClawBrowser" \
+    --no-first-run \
+    "file://$BRIDGE" 2>/dev/null &
 BROWSER_PID=$!
 
 echo -n "⏳ Waiting for CDP"
-BROWSER_WS=""
 for i in $(seq 1 30); do
     sleep 1
     VJSON=$(curl -s http://127.0.0.1:9222/json/version 2>/dev/null)
@@ -539,15 +546,15 @@ for i in $(seq 1 30); do
     echo -n "."
 done
 echo ""
-if [ -z "$BROWSER_WS" ]; then echo "❌ CDP not ready"; kill $BROWSER_PID 2>/dev/null; exit 1; fi
+if [ -z "$BROWSER_WS" ]; then echo "❌ CDP not ready"; kill $BROWSER_PID 2>/dev/null; rm -f "$BRIDGE"; exit 1; fi
+echo "✅ CDP ready"
 
-BRIDGE=$(mktemp /tmp/openclaw-bridge-XXXXX.html)
-curl -s "$SERVER/relay/bridge" > "$BRIDGE"
-sed -i '' "s|__RELAY_URL__|$WS_URL|g" "$BRIDGE"
-sed -i '' "s|__RELAY_TOKEN__|$RELAY_TOKEN|g" "$BRIDGE"
-sed -i '' "s|__BROWSER_WS_URL__|$BROWSER_WS|g" "$BRIDGE"
-
-open "file://$BRIDGE" 2>/dev/null || echo "⚠️  Open: file://$BRIDGE"
+# Inject real browser WS URL and reload bridge
+sed -i '' "s|__SELF_DISCOVER__|$BROWSER_WS|g" "$BRIDGE"
+TAB_ID=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"id": *"[^"]*"' | head -1 | cut -d'"' -f4)
+if [ -n "$TAB_ID" ]; then
+    curl -s "http://127.0.0.1:9222/json/navigate/$TAB_ID?file://$BRIDGE" > /dev/null 2>&1
+fi
 
 echo "✅ Ready! Keep this terminal open."
 wait $BROWSER_PID 2>/dev/null
@@ -598,13 +605,19 @@ if "%%RELAY_TOKEN%%"=="" (
     echo Paired!
 )
 
+echo Preparing bridge page...
+set "BRIDGE=%%TEMP%%\openclaw-bridge-%%RANDOM%%.html"
+powershell -Command "$h = @'
+%s
+'@; $h = $h.Replace('__RELAY_URL__','%%WS_URL%%').Replace('__RELAY_TOKEN__','%%RELAY_TOKEN%%').Replace('__BROWSER_WS_URL__','__SELF_DISCOVER__'); [IO.File]::WriteAllText('%%BRIDGE%%',$h,[Text.Encoding]::UTF8)"
+
 echo Launching browser...
 set "CHROME="
 if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" set "CHROME=C:\Program Files\Google\Chrome\Application\chrome.exe"
 if exist "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" set "CHROME=C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 if "%%CHROME%%"=="" ( echo Chrome not found! & pause & exit /b 1 )
 
-start "" "%%CHROME%%" --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%%USERPROFILE%%\OpenClawBrowser" --no-first-run about:blank
+start "" "%%CHROME%%" --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%%USERPROFILE%%\OpenClawBrowser" --no-first-run "file:///%%BRIDGE%%"
 
 echo Waiting for CDP...
 :CDPWAIT
@@ -612,12 +625,9 @@ powershell -Command "Start-Sleep 1"
 for /f "usebackq delims=" %%%%i in (`+"`"+`powershell -Command "try { (Invoke-RestMethod 'http://localhost:9222/json/version').webSocketDebuggerUrl } catch { 'waiting' }"`+"`"+`) do set "BROWSER_WS=%%%%i"
 if "%%BROWSER_WS%%"=="waiting" goto CDPWAIT
 
-set "BRIDGE=%%TEMP%%\openclaw-bridge-%%RANDOM%%.html"
-powershell -Command "$h = @'
-%s
-'@; $h = $h.Replace('__RELAY_URL__','%%WS_URL%%').Replace('__RELAY_TOKEN__','%%RELAY_TOKEN%%').Replace('__BROWSER_WS_URL__','%%BROWSER_WS%%'); [IO.File]::WriteAllText('%%BRIDGE%%',$h,[Text.Encoding]::UTF8)"
-
-powershell -Command "try { Invoke-RestMethod 'http://localhost:9222/json/new?file:///%%BRIDGE%%' } catch { Start-Process 'file:///%%BRIDGE%%' }" >nul 2>&1
+REM Inject real WS URL and reload bridge
+powershell -Command "$h = [IO.File]::ReadAllText('%%BRIDGE%%'); $h = $h.Replace('__SELF_DISCOVER__','%%BROWSER_WS%%'); [IO.File]::WriteAllText('%%BRIDGE%%',$h,[Text.Encoding]::UTF8)"
+powershell -Command "try { $tabs = Invoke-RestMethod 'http://localhost:9222/json'; $id = $tabs[0].id; Invoke-RestMethod ('http://localhost:9222/json/navigate/' + $id + '?file:///%%BRIDGE%%') } catch {}" >nul 2>&1
 
 echo Ready! Keep this window open.
 pause

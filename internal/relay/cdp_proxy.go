@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 )
@@ -36,7 +37,6 @@ func deriveWSScheme(r *http.Request) string {
 }
 
 // HandleCDPJsonVersion returns a CDP-compatible /json/version response.
-// This allows OpenClaw (or any CDP client) to discover the relay's WS endpoint.
 func (rl *Relay) HandleCDPJsonVersion(w http.ResponseWriter, r *http.Request) {
 	token := extractToken(r)
 	if token == "" {
@@ -81,7 +81,6 @@ func (rl *Relay) HandleCDPJsonList(w http.ResponseWriter, r *http.Request) {
 
 	wsScheme := deriveWSScheme(r)
 
-	// Add webSocketDebuggerUrl to each target
 	type cdpTarget struct {
 		CDPTarget
 		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
@@ -98,9 +97,26 @@ func (rl *Relay) HandleCDPJsonList(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
+// cdpMessage is a minimal CDP JSON-RPC message for parsing.
+type cdpMessage struct {
+	ID        int64           `json:"id,omitempty"`
+	Method    string          `json:"method,omitempty"`
+	Params    json.RawMessage `json:"params,omitempty"`
+	Result    json.RawMessage `json:"result,omitempty"`
+	Error     json.RawMessage `json:"error,omitempty"`
+	SessionID string          `json:"sessionId,omitempty"`
+}
+
 // HandleCDPProxyWS is a raw CDP WebSocket proxy.
 // It speaks standard CDP JSON-RPC (no envelope) on the agent side,
-// and wraps/unwraps messages using our relay envelope format internally.
+// and translates to/from our relay envelope format.
+//
+// Flow:
+// 1. Agent connects, gets list of targets
+// 2. Agent sends Target.attachToTarget → proxy sends "connect" envelope to bridge
+// 3. Bridge attaches and reports sessionId back via CDP event
+// 4. Subsequent CDP messages with sessionId get wrapped and forwarded
+// 5. Responses from bridge get unwrapped and sent as raw CDP to agent
 func (rl *Relay) HandleCDPProxyWS(w http.ResponseWriter, r *http.Request) {
 	token := extractToken(r)
 	if token == "" {
@@ -120,34 +136,18 @@ func (rl *Relay) HandleCDPProxyWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	// Replace agent WS with this CDP proxy connection
-	sess.SetAgentWS(conn)
 	log.Printf("[relay-cdp] CDP proxy connected for user %d", sess.UserID)
 
-	// Send initial status
-	sess.mu.Lock()
-	browserConnected := sess.BrowserWS != nil
-	sess.mu.Unlock()
-	if browserConnected {
-		// Send a synthetic CDP event so the client knows the browser is ready
-		conn.WriteJSON(map[string]interface{}{
-			"method": "Relay.browserConnected",
-			"params": map[string]bool{"connected": true},
-		})
+	// Create a CDP proxy state
+	proxy := &cdpProxy{
+		conn:      conn,
+		sess:      sess,
+		relay:     rl,
+		pendingID: make(map[int64]string), // maps CDP request id to method name
 	}
 
-	// We need a goroutine to forward browser→agent messages
-	done := make(chan struct{})
-
-	// Create a message channel for browser→agent forwarding
-	// We intercept messages from the browser WS in a custom way:
-	// Register this connection as agent WS, and override the forwarding behavior.
-	// The existing relay.go HandleBrowserWS forwards envelope messages to AgentWS.
-	// Those messages arrive as envelope format. We need to unwrap them.
-
-	// The trick: we set AgentWS to a wrapper that unwraps envelopes.
-	// But since we can't easily wrap websocket.Conn, instead we'll
-	// use the existing agent WS slot and add a flag for raw CDP mode.
+	// Replace agent WS with a proxy-aware connection
+	sess.SetAgentWS(conn)
 	sess.mu.Lock()
 	sess.CDPRawMode = true
 	sess.mu.Unlock()
@@ -158,31 +158,113 @@ func (rl *Relay) HandleCDPProxyWS(w http.ResponseWriter, r *http.Request) {
 		sess.CDPRawMode = false
 		sess.mu.Unlock()
 		log.Printf("[relay-cdp] CDP proxy disconnected for user %d", sess.UserID)
-		close(done)
 	}()
 
-	// Read loop: agent sends raw CDP, we wrap in envelope and forward to browser
+	// Read loop: agent sends raw CDP
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			break
 		}
+		proxy.handleAgentMessage(msg)
+	}
+}
 
-		sess.IncrementMsgCount()
+type cdpProxy struct {
+	conn      *websocket.Conn
+	sess      *RelaySession
+	relay     *Relay
+	mu        sync.Mutex
+	pendingID map[int64]string // CDP id -> method for tracking
+}
 
-		// Wrap raw CDP message in relay envelope
+func (p *cdpProxy) handleAgentMessage(raw []byte) {
+	var msg cdpMessage
+	if err := json.Unmarshal(raw, &msg); err != nil {
+		return
+	}
+
+	p.mu.Lock()
+	p.pendingID[msg.ID] = msg.Method
+	p.mu.Unlock()
+
+	p.sess.IncrementMsgCount()
+
+	// Special handling for Target.getTargets - respond from cache
+	if msg.Method == "Target.getTargets" {
+		targets := p.sess.GetTargets()
+		if targets == nil {
+			targets = []CDPTarget{}
+		}
+		// Convert to CDP format
+		type targetInfo struct {
+			TargetID string `json:"targetId"`
+			Type     string `json:"type"`
+			Title    string `json:"title"`
+			URL      string `json:"url"`
+			Attached bool   `json:"attached"`
+		}
+		infos := make([]targetInfo, len(targets))
+		for i, t := range targets {
+			infos[i] = targetInfo{
+				TargetID: t.ID,
+				Type:     t.Type,
+				Title:    t.Title,
+				URL:      t.URL,
+			}
+		}
+		resp := map[string]interface{}{
+			"id":     msg.ID,
+			"result": map[string]interface{}{"targetInfos": infos},
+		}
+		respBytes, _ := json.Marshal(resp)
+		p.conn.WriteMessage(websocket.TextMessage, respBytes)
+		return
+	}
+
+	// Special handling for Target.attachToTarget - send "connect" envelope
+	if msg.Method == "Target.attachToTarget" {
+		var params struct {
+			TargetID string `json:"targetId"`
+			Flatten  bool   `json:"flatten"`
+		}
+		json.Unmarshal(msg.Params, &params)
+
+		// Send connect envelope to bridge
 		envelope := Envelope{
-			Type: "cdp",
-			Data: json.RawMessage(msg),
+			Type:     "connect",
+			TargetID: params.TargetID,
 		}
 		envBytes, _ := json.Marshal(envelope)
-
-		sess.mu.Lock()
-		browserWS := sess.BrowserWS
-		sess.mu.Unlock()
+		p.sess.mu.Lock()
+		browserWS := p.sess.BrowserWS
+		p.sess.mu.Unlock()
 		if browserWS != nil {
 			browserWS.WriteMessage(websocket.TextMessage, envBytes)
 		}
+
+		// The bridge will send back a Target.attachedToTarget event via CDP
+		// which will flow through the normal relay → agent path.
+		// We store the request ID so we can synthesize a response when we see the event.
+		return
+	}
+
+	// All other CDP messages: wrap in envelope and forward to browser
+	// The message may have a sessionId (for target-specific commands)
+	envelope := Envelope{
+		Type: "cdp",
+		Data: json.RawMessage(raw),
+	}
+	if msg.SessionID != "" {
+		envelope.TargetID = "" // bridge uses sessionId from the CDP message itself
+	}
+	envBytes, _ := json.Marshal(envelope)
+
+	p.sess.mu.Lock()
+	browserWS := p.sess.BrowserWS
+	p.sess.mu.Unlock()
+	if browserWS != nil {
+		browserWS.WriteMessage(websocket.TextMessage, envBytes)
 	}
 }
 
@@ -190,7 +272,6 @@ func (rl *Relay) HandleCDPProxyWS(w http.ResponseWriter, r *http.Request) {
 func (rl *Relay) HandleCDPStatusJSON(w http.ResponseWriter, r *http.Request) {
 	token := extractToken(r)
 	if token == "" {
-		// Fall back to cookie auth
 		rl.HandleStatus(w, r)
 		return
 	}

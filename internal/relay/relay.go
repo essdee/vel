@@ -136,11 +136,12 @@ func (rl *Relay) HandleBrowserWS(w http.ResponseWriter, r *http.Request) {
 			if err := json.Unmarshal(env.Data, &targets); err == nil {
 				sess.SetTargets(targets)
 			}
-			// Forward to agent
+			// Forward to agent (skip in raw CDP mode — agent uses Target.getTargets)
 			sess.mu.Lock()
 			agentWS = sess.AgentWS
+			rawMode := sess.CDPRawMode
 			sess.mu.Unlock()
-			if agentWS != nil {
+			if agentWS != nil && !rawMode {
 				agentWS.WriteMessage(websocket.TextMessage, msg)
 			}
 
