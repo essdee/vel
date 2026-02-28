@@ -473,7 +473,7 @@ LAUNCHER_ID=$(head -c 8 /dev/urandom | xxd -p)
 echo "🌐 Launching browser..."
 "$CHROME" \
     --remote-debugging-port=9222 \
-    '--remote-allow-origins=*' \
+    "--remote-allow-origins=$SERVER" \
     --user-data-dir="$HOME/OpenClawBrowser" \
     --no-first-run \
     "$SERVER/relay/bridge?launcher=$LAUNCHER_ID" 2>/dev/null &
@@ -531,7 +531,7 @@ LAUNCHER_ID=$(head -c 8 /dev/urandom | xxd -p)
 echo "🌐 Launching browser..."
 "$CHROME" \
     --remote-debugging-port=9222 \
-    '--remote-allow-origins=*' \
+    "--remote-allow-origins=$SERVER" \
     --user-data-dir="$HOME/OpenClawBrowser" \
     --no-first-run \
     "$SERVER/relay/bridge?launcher=$LAUNCHER_ID" 2>/dev/null &
@@ -577,7 +577,7 @@ if "%%CHROME%%"=="" ( echo Chrome not found! & pause & exit /b 1 )
 
 for /f "usebackq delims=" %%%%i in (`+"`"+`powershell -Command "[guid]::NewGuid().ToString('N').Substring(0,16)"`+"`"+`) do set "LAUNCHER_ID=%%%%i"
 
-start "" "%%CHROME%%" --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%%USERPROFILE%%\OpenClawBrowser" --no-first-run "%%SERVER%%/relay/bridge?launcher=%%LAUNCHER_ID%%"
+start "" "%%CHROME%%" --remote-debugging-port=9222 "--remote-allow-origins=%%SERVER%%" --user-data-dir="%%USERPROFILE%%\OpenClawBrowser" --no-first-run "%%SERVER%%/relay/bridge?launcher=%%LAUNCHER_ID%%"
 
 echo Waiting for CDP...
 :CDPWAIT
