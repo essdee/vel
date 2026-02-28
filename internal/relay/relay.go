@@ -17,16 +17,18 @@ var upgrader = websocket.Upgrader{
 
 // Relay holds the relay state and handlers.
 type Relay struct {
-	sessions *SessionManager
-	pairing  *PairingManager
+	sessions  *SessionManager
+	pairing   *PairingManager
+	launchers *launcherStore
 }
 
 // New creates a new Relay instance.
 func New() *Relay {
 	sm := NewSessionManager()
 	return &Relay{
-		sessions: sm,
-		pairing:  NewPairingManager(sm),
+		sessions:  sm,
+		pairing:   NewPairingManager(sm),
+		launchers: newLauncherStore(),
 	}
 }
 

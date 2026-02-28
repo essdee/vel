@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+func getBotUsername() string {
+	return "EmpRamBot"
+}
+
 func deriveBaseURL(r *http.Request) string {
 	scheme := "https"
 	if r.TLS == nil {
@@ -28,11 +32,13 @@ func deriveWSURL(r *http.Request) string {
 	return fmt.Sprintf("%s://%s/relay/ws", scheme, r.Host)
 }
 
-// HandleBridge serves the raw bridge HTML template (with placeholders).
-// No auth required — the template contains no secrets.
+// HandleBridge serves the bridge HTML page.
+// Injects bot username. No auth required — pairing happens in-browser.
 func (rl *Relay) HandleBridge(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(bridgeHTML))
+	botUser := getBotUsername()
+	html := strings.ReplaceAll(bridgeHTML, "__BOT_USERNAME__", botUser)
+	w.Write([]byte(html))
 }
 
 // HandleDownload generates platform-specific launcher scripts.
@@ -40,23 +46,22 @@ func (rl *Relay) HandleBridge(w http.ResponseWriter, r *http.Request) {
 func (rl *Relay) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	platform := r.URL.Query().Get("platform")
 	if platform == "" {
-		platform = "linux"
+		http.Error(w, "Invalid platform. Use: linux, mac, windows", 400)
+		return
 	}
 
 	baseURL := deriveBaseURL(r)
-	wsURL := deriveWSURL(r)
-	botUsername := "EmpRamBot"
 
 	var script, filename string
 	switch platform {
 	case "linux":
-		script = generateLinuxScript(baseURL, wsURL, botUsername)
+		script = generateLinuxScript(baseURL)
 		filename = "openclaw-browser.sh"
 	case "mac":
-		script = generateMacScript(baseURL, wsURL, botUsername)
+		script = generateMacScript(baseURL)
 		filename = "openclaw-browser.command"
 	case "windows":
-		script = generateWindowsScript(baseURL, wsURL, botUsername)
+		script = generateWindowsScript(baseURL)
 		filename = "openclaw-browser.bat"
 	default:
 		http.Error(w, "Invalid platform. Use: linux, mac, windows", 400)
@@ -68,9 +73,8 @@ func (rl *Relay) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(script))
 }
 
-// bridgeHTML is the bridge page that runs from file://.
-// It uses ONLY WebSocket — no HTTP fetch (avoids CORS on /json endpoint).
-// Placeholders: __RELAY_URL__, __RELAY_TOKEN__, __BROWSER_WS_URL__
+// bridgeHTML is the bridge page served from the server over HTTPS.
+// Handles pairing in-browser, polls for CDP WS URL from launcher.
 const bridgeHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -84,18 +88,27 @@ const bridgeHTML = `<!DOCTYPE html>
   h1 { font-size: 22px; font-weight: 600; color: #fff; margin-bottom: 32px; }
   .status-icon { font-size: 40px; margin-bottom: 12px; }
   .status-text { font-size: 18px; font-weight: 500; }
-  .status-sub { font-size: 14px; color: #888; margin-top: 8px; }
-  .card { background: #16161c; border: 1px solid #2a2a35; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .status-sub { font-size: 14px; color: #888; margin-top: 8px; line-height: 1.6; }
+  .card { background: #16161c; border: 1px solid #2a2a35; border-radius: 12px; padding: 24px; margin-bottom: 16px; }
   @keyframes glow { 0%,100% { box-shadow: 0 0 20px rgba(34,197,94,0.2); } 50% { box-shadow: 0 0 40px rgba(34,197,94,0.4); } }
   @keyframes aglow { 0%,100% { box-shadow: 0 0 20px rgba(0,170,255,0.2); } 50% { box-shadow: 0 0 40px rgba(0,170,255,0.5); } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
   .card.connected { animation: glow 3s ease-in-out infinite; }
   .card.active { animation: aglow 1.5s ease-in-out infinite; }
+  .card.pairing { border-color: #f59e0b33; }
   .tab-name { color: #0af; font-size: 14px; margin-top: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 400px; margin: 8px auto 0; }
   .tips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-bottom: 24px; }
   .tip { background: #1a1a24; border: 1px solid #2a2a35; border-radius: 6px; padding: 6px 12px; font-size: 12px; color: #888; }
   .btn { background: transparent; border: 1px solid #444; color: #aaa; padding: 8px 20px; border-radius: 6px; cursor: pointer; font-size: 13px; }
   .btn:hover { border-color: #ef4444; color: #ef4444; }
+  .btn-primary { border-color: #0af; color: #0af; margin-top: 12px; }
+  .btn-primary:hover { background: rgba(0,170,255,0.1); border-color: #0af; color: #0af; }
   .hidden { display: none; }
+  .code { font-size: 36px; font-weight: 700; letter-spacing: 8px; color: #f59e0b; font-family: 'SF Mono', 'Fira Code', monospace; margin: 16px 0 8px; }
+  .code-hint { font-size: 13px; color: #888; margin-bottom: 4px; }
+  .tg-link { display: inline-block; background: rgba(0,170,255,0.1); border: 1px solid rgba(0,170,255,0.2); border-radius: 8px; padding: 10px 20px; color: #0af; text-decoration: none; font-weight: 600; font-size: 14px; margin-top: 8px; transition: all 0.2s; }
+  .tg-link:hover { background: rgba(0,170,255,0.2); }
+  .waiting-dots { animation: pulse 1.5s infinite; }
 </style>
 </head>
 <body>
@@ -103,10 +116,11 @@ const bridgeHTML = `<!DOCTYPE html>
   <div class="logo">🦞</div>
   <h1>OpenClaw Browser</h1>
   <div class="card" id="statusCard">
-    <div class="status-icon" id="statusIcon">🔗</div>
-    <div class="status-text" id="statusText">Connecting...</div>
+    <div class="status-icon" id="statusIcon">⏳</div>
+    <div class="status-text" id="statusText">Starting...</div>
     <div class="status-sub" id="statusSub"></div>
     <div class="tab-name hidden" id="tabName"></div>
+    <div id="pairingUI" class="hidden"></div>
   </div>
   <div class="tips">
     <span class="tip">💡 Keep this tab open</span>
@@ -116,154 +130,241 @@ const bridgeHTML = `<!DOCTYPE html>
 </div>
 <script>
 (function() {
-  const RELAY_URL = '__RELAY_URL__';
-  const RELAY_TOKEN = '__RELAY_TOKEN__';
-  const BROWSER_WS = '__BROWSER_WS_URL__';
-  const $ = id => document.getElementById(id);
+  var BOT = '__BOT_USERNAME__';
+  var ORIGIN = window.location.origin;
+  var params = new URLSearchParams(window.location.search);
+  var launcherID = params.get('launcher') || '';
 
-  let relayWS = null;
-  let browserWS = null;
-  let sessionMap = {};  // sessionId -> targetId
-  let targetMap = {};   // targetId -> sessionId
-  let targets = [];
-  let cdpId = 1;
-  let refreshInterval = null;
+  var $ = function(id) { return document.getElementById(id); };
+  var relayWS = null;
+  var browserWS = null;
+  var browserWSURL = null;
+  var relayToken = localStorage.getItem('openclaw_relay_token') || '';
+  var sessionMap = {};
+  var targetMap = {};
+  var targets = [];
+  var cdpId = 1;
+  var refreshInterval = null;
 
   function setStatus(icon, text, sub, cls) {
     $('statusIcon').textContent = icon;
     $('statusText').textContent = text;
-    $('statusSub').textContent = sub || '';
+    $('statusSub').innerHTML = sub || '';
     $('statusCard').className = 'card' + (cls ? ' ' + cls : '');
     $('tabName').classList.add('hidden');
+    $('pairingUI').classList.add('hidden');
   }
 
   function showTab(name) {
-    const el = $('tabName');
+    var el = $('tabName');
     el.textContent = '🔍 ' + name;
     el.classList.remove('hidden');
   }
 
-  // Discover targets via CDP Target.getTargets() over browser WS
+  // ── Phase 1: Get relay token (pair or use saved) ──
+
+  function start() {
+    if (relayToken) {
+      setStatus('🔑', 'Reconnecting...', 'Using saved session');
+      fetch(ORIGIN + '/relay/cdp/status?token=' + relayToken)
+        .then(function(r) { return r.ok ? r.json() : Promise.reject('bad'); })
+        .then(function(d) {
+          if (d.state !== undefined) { waitForWSURL(); }
+          else { clearToken(); startPairing(); }
+        })
+        .catch(function() { clearToken(); startPairing(); });
+      return;
+    }
+    startPairing();
+  }
+
+  function clearToken() {
+    relayToken = '';
+    localStorage.removeItem('openclaw_relay_token');
+  }
+
+  function startPairing() {
+    setStatus('🔗', 'Pairing required', '', 'pairing');
+    $('pairingUI').classList.remove('hidden');
+
+    fetch(ORIGIN + '/relay/pair/new')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.error) {
+          $('pairingUI').innerHTML = '<div class="status-sub">❌ ' + d.error + '</div><button class="btn btn-primary" onclick="location.reload()">Try Again</button>';
+          return;
+        }
+        var code = d.code;
+        var pairingToken = d.token;
+
+        $('pairingUI').innerHTML =
+          '<div class="code">' + code + '</div>' +
+          '<div class="code-hint">Send this code to Ram on Telegram</div>' +
+          '<a class="tg-link" href="https://t.me/' + BOT + '?start=pair_' + code + '" target="_blank">💬 Open Telegram</a>' +
+          '<div class="code-hint" style="margin-top:16px"><span class="waiting-dots">⏳</span> Waiting for pairing...</div>';
+
+        pollPairing(pairingToken, 0);
+      })
+      .catch(function() {
+        $('pairingUI').innerHTML = '<div class="status-sub">❌ Could not reach server</div><button class="btn btn-primary" onclick="location.reload()">Retry</button>';
+      });
+  }
+
+  function pollPairing(pairingToken, attempt) {
+    if (attempt >= 150) {
+      setStatus('⏰', 'Pairing expired', '');
+      $('pairingUI').classList.remove('hidden');
+      $('pairingUI').innerHTML = '<button class="btn btn-primary" onclick="location.reload()">Try Again</button>';
+      return;
+    }
+    setTimeout(function() {
+      fetch(ORIGIN + '/relay/pair/status?token=' + pairingToken)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.activated && d.relayToken) {
+            relayToken = d.relayToken;
+            localStorage.setItem('openclaw_relay_token', relayToken);
+            setStatus('✅', 'Paired!', 'Connecting to browser...');
+            waitForWSURL();
+          } else {
+            pollPairing(pairingToken, attempt + 1);
+          }
+        })
+        .catch(function() { pollPairing(pairingToken, attempt + 1); });
+    }, 2000);
+  }
+
+  // ── Phase 2: Get browser WS URL from launcher ──
+
+  function waitForWSURL() {
+    if (!launcherID) {
+      setStatus('⏳', 'Waiting for browser...', 'No launcher ID — start the launcher script');
+      return;
+    }
+    setStatus('⏳', 'Waiting for browser...', '<span class="waiting-dots">Connecting to Chrome CDP...</span>');
+    pollWSURL(0);
+  }
+
+  function pollWSURL(attempt) {
+    if (attempt >= 60) {
+      setStatus('❌', 'Browser not found', 'Launcher did not report CDP info. Try restarting.');
+      return;
+    }
+    setTimeout(function() {
+      fetch(ORIGIN + '/relay/cdp-info?launcher=' + launcherID)
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+          if (d.wsUrl) {
+            browserWSURL = d.wsUrl;
+            connectBrowser();
+          } else {
+            pollWSURL(attempt + 1);
+          }
+        })
+        .catch(function() { pollWSURL(attempt + 1); });
+    }, 1000);
+  }
+
+  // ── Phase 3: Connect to browser CDP ──
+
   function refreshTargets() {
     if (!browserWS || browserWS.readyState !== 1) return;
     browserWS.send(JSON.stringify({ id: cdpId++, method: 'Target.getTargets' }));
   }
 
-  // Attach to a target using flatten mode (multiplexed over browser WS)
   function attachTarget(targetId) {
-    if (targetMap[targetId]) return; // already attached
-    const id = cdpId++;
+    if (targetMap[targetId]) return;
     browserWS.send(JSON.stringify({
-      id: id,
+      id: cdpId++,
       method: 'Target.attachToTarget',
       params: { targetId: targetId, flatten: true }
     }));
   }
 
   function detachTarget(targetId) {
-    const sessionId = targetMap[targetId];
-    if (!sessionId) return;
+    var sid = targetMap[targetId];
+    if (!sid) return;
     browserWS.send(JSON.stringify({
       id: cdpId++,
       method: 'Target.detachFromTarget',
-      params: { sessionId: sessionId }
+      params: { sessionId: sid }
     }));
     delete targetMap[targetId];
-    delete sessionMap[sessionId];
+    delete sessionMap[sid];
   }
 
   function filterTargets(list) {
-    return list.filter(t =>
-      t.type === 'page' &&
-      !t.url.startsWith('chrome://') &&
-      !t.url.startsWith('chrome-extension://') &&
-      !t.url.includes('openclaw-bridge-') &&
-      !t.url.startsWith('devtools://') &&
-      t.url !== '' &&
-      t.url !== 'about:blank'
-    );
+    return list.filter(function(t) {
+      return t.type === 'page' &&
+        !t.url.startsWith('chrome://') &&
+        !t.url.startsWith('chrome-extension://') &&
+        !t.url.startsWith('devtools://') &&
+        t.url !== '' &&
+        t.url !== 'about:blank';
+    });
   }
 
   function connectBrowser() {
-    // If WS URL is placeholder, wait for launcher to inject it and reload
-    if (BROWSER_WS === '__SELF_DISCOVER__') {
-      setStatus('⏳', 'Waiting for CDP...', 'Launcher will reload this page shortly');
-      return;
-    }
     setStatus('🔗', 'Connecting to browser...', '');
-    browserWS = new WebSocket(BROWSER_WS);
+    browserWS = new WebSocket(browserWSURL);
 
-    browserWS.onopen = () => {
+    browserWS.onopen = function() {
       console.log('[bridge] connected to browser CDP');
-      // Enable target discovery events
       browserWS.send(JSON.stringify({ id: cdpId++, method: 'Target.setDiscoverTargets', params: { discover: true } }));
       refreshTargets();
       refreshInterval = setInterval(refreshTargets, 5000);
       connectRelay();
     };
 
-    browserWS.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
+    browserWS.onmessage = function(e) {
+      var msg = JSON.parse(e.data);
 
-      // Handle Target.getTargets response
       if (msg.result && msg.result.targetInfos) {
         targets = filterTargets(msg.result.targetInfos);
-        // Send target list to relay
         if (relayWS && relayWS.readyState === 1) {
-          const relayTargets = targets.map(t => ({
-            id: t.targetId,
-            title: t.title,
-            url: t.url,
-            type: t.type,
-            webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/' + t.targetId
-          }));
+          var relayTargets = targets.map(function(t) {
+            return {
+              id: t.targetId, title: t.title, url: t.url, type: t.type,
+              webSocketDebuggerUrl: 'ws://localhost:9222/devtools/page/' + t.targetId
+            };
+          });
           relayWS.send(JSON.stringify({ type: 'targets', data: relayTargets }));
         }
         return;
       }
 
-      // Handle attachToTarget response (get sessionId)
-      if (msg.result && msg.result.sessionId) {
-        // Find which target this was for by checking pending
-        // We'll handle via targetCreated/attachedToTarget events instead
-      }
-
-      // Handle Target.attachedToTarget event (flatten mode)
       if (msg.method === 'Target.attachedToTarget') {
-        const sessionId = msg.params.sessionId;
-        const targetId = msg.params.targetInfo.targetId;
+        var sessionId = msg.params.sessionId;
+        var targetId = msg.params.targetInfo.targetId;
         sessionMap[sessionId] = targetId;
         targetMap[targetId] = sessionId;
-        console.log('[bridge] attached to target', targetId, 'session', sessionId);
+        console.log('[bridge] attached', targetId, 'session', sessionId);
         return;
       }
 
-      // Handle Target.detachedFromTarget
       if (msg.method === 'Target.detachedFromTarget') {
-        const sessionId = msg.params.sessionId;
-        const targetId = sessionMap[sessionId];
-        if (targetId) delete targetMap[targetId];
-        delete sessionMap[sessionId];
+        var sid = msg.params.sessionId;
+        var tid = sessionMap[sid];
+        if (tid) delete targetMap[tid];
+        delete sessionMap[sid];
         return;
       }
 
-      // Handle Target.targetCreated / targetDestroyed (from setDiscoverTargets)
       if (msg.method === 'Target.targetCreated' || msg.method === 'Target.targetInfoChanged' || msg.method === 'Target.targetDestroyed') {
-        refreshTargets(); // refresh the full list
+        refreshTargets();
         return;
       }
 
-      // Handle CDP messages from attached targets (sessionId present = from a target)
       if (msg.sessionId) {
-        const targetId = sessionMap[msg.sessionId];
-        if (targetId && relayWS && relayWS.readyState === 1) {
-          relayWS.send(JSON.stringify({ type: 'cdp', targetId: targetId, data: msg }));
+        var tid2 = sessionMap[msg.sessionId];
+        if (tid2 && relayWS && relayWS.readyState === 1) {
+          relayWS.send(JSON.stringify({ type: 'cdp', targetId: tid2, data: msg }));
         }
         return;
       }
     };
 
-    browserWS.onclose = () => {
+    browserWS.onclose = function() {
       console.log('[bridge] browser WS closed');
       if (refreshInterval) clearInterval(refreshInterval);
       sessionMap = {};
@@ -272,36 +373,39 @@ const bridgeHTML = `<!DOCTYPE html>
       setTimeout(connectBrowser, 3000);
     };
 
-    browserWS.onerror = () => {};
+    browserWS.onerror = function() {};
   }
 
-  function connectRelay() {
-    setStatus('🔗', 'Connecting to relay...', '');
-    relayWS = new WebSocket(RELAY_URL + '?token=' + RELAY_TOKEN);
+  // ── Phase 4: Connect to relay server ──
 
-    relayWS.onopen = () => {
+  function connectRelay() {
+    var wsScheme = ORIGIN.startsWith('https') ? 'wss' : 'ws';
+    var wsHost = ORIGIN.replace(/^https?:\/\//, '');
+    var relayURL = wsScheme + '://' + wsHost + '/relay/ws';
+
+    setStatus('🔗', 'Connecting to relay...', '');
+    relayWS = new WebSocket(relayURL + '?token=' + relayToken);
+
+    relayWS.onopen = function() {
       setStatus('✅', 'Connected!', 'Waiting for your AI...', 'connected');
-      refreshTargets(); // send current targets
+      refreshTargets();
     };
 
-    relayWS.onmessage = (e) => {
-      const env = JSON.parse(e.data);
-
+    relayWS.onmessage = function(e) {
+      var env = JSON.parse(e.data);
       switch (env.type) {
         case 'cdp': {
-          // Forward CDP command to correct target via sessionId
-          const sessionId = targetMap[env.targetId];
-          if (sessionId && browserWS && browserWS.readyState === 1) {
-            const cdpMsg = env.data;
-            cdpMsg.sessionId = sessionId;
+          var sid = targetMap[env.targetId];
+          if (sid && browserWS && browserWS.readyState === 1) {
+            var cdpMsg = env.data;
+            cdpMsg.sessionId = sid;
             browserWS.send(JSON.stringify(cdpMsg));
           }
           break;
         }
         case 'connect': {
-          // Agent wants to connect to a target
           setStatus('🤖', 'AI is working...', '', 'active');
-          const t = targets.find(x => x.targetId === env.targetId);
+          var t = targets.find(function(x) { return x.targetId === env.targetId; });
           if (t) showTab(t.title);
           attachTarget(env.targetId);
           break;
@@ -321,12 +425,18 @@ const bridgeHTML = `<!DOCTYPE html>
       }
     };
 
-    relayWS.onclose = () => {
+    relayWS.onclose = function(e) {
+      if (e.code === 4001 || e.code === 1008) {
+        clearToken();
+        setStatus('🔑', 'Session expired', '');
+        startPairing();
+        return;
+      }
       setStatus('🔌', 'Relay disconnected', 'Reconnecting...');
       setTimeout(connectRelay, 3000);
     };
 
-    relayWS.onerror = () => {};
+    relayWS.onerror = function() {};
   }
 
   window.disconnect = function() {
@@ -338,19 +448,17 @@ const bridgeHTML = `<!DOCTYPE html>
     setStatus('🔌', 'Disconnected', 'You can close this tab');
   };
 
-  connectBrowser();
+  start();
 })();
 </script>
 </body>
 </html>`
 
-func generateLinuxScript(baseURL, wsURL, botUsername string) string {
+func generateLinuxScript(baseURL string) string {
 	return fmt.Sprintf(`#!/bin/bash
 # OpenClaw Browser Launcher
 
 SERVER="%s"
-WS_URL="%s"
-BOT="%s"
 
 CHROME=$(command -v google-chrome || command -v chromium-browser || command -v chromium 2>/dev/null)
 if [ -z "$CHROME" ]; then
@@ -358,76 +466,22 @@ if [ -z "$CHROME" ]; then
     exit 1
 fi
 
-# Check saved token
-TOKEN_FILE="$HOME/.openclaw-relay-token"
-RELAY_TOKEN=""
-if [ -f "$TOKEN_FILE" ]; then
-    RELAY_TOKEN=$(cat "$TOKEN_FILE")
-    echo "🔑 Found saved session. Reconnecting..."
-fi
+# Generate launcher ID for bridge <-> launcher coordination
+LAUNCHER_ID=$(head -c 8 /dev/urandom | xxd -p)
 
-if [ -z "$RELAY_TOKEN" ]; then
-    echo "🦞 Getting pairing code..."
-    PAIR_RESP=$(curl -s "$SERVER/relay/pair/new" 2>/dev/null)
-    if [ -z "$PAIR_RESP" ]; then
-        echo "❌ Could not reach server at $SERVER"
-        exit 1
-    fi
-    CODE=$(echo "$PAIR_RESP" | grep -o '"code":"[^"]*"' | head -1 | cut -d'"' -f4)
-    PTOKEN=$(echo "$PAIR_RESP" | grep -o '"token":"[^"]*"' | head -1 | cut -d'"' -f4)
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "   Your pairing code:  $CODE"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "   Send to Ram on Telegram: pair $CODE"
-    echo "   Or tap: https://t.me/${BOT}?start=pair_${CODE}"
-    echo ""
-    echo -n "⏳ Waiting for pairing"
-
-    for i in $(seq 1 150); do
-        STATUS=$(curl -s "$SERVER/relay/pair/status?token=$PTOKEN" 2>/dev/null)
-        if echo "$STATUS" | grep -q '"activated":true'; then
-            RELAY_TOKEN=$(echo "$STATUS" | grep -o '"relayToken":"[^"]*"' | head -1 | cut -d'"' -f4)
-            break
-        fi
-        echo -n "."
-        sleep 2
-    done
-    echo ""
-
-    if [ -z "$RELAY_TOKEN" ]; then
-        echo "❌ Pairing timed out."
-        exit 1
-    fi
-    echo "$RELAY_TOKEN" > "$TOKEN_FILE"
-    echo "✅ Paired!"
-fi
-
-# Prepare bridge HTML before launching Chrome
-# We need the browser WS URL, but we don't have it yet.
-# The bridge will discover it via fetch to localhost:9222/json/version.
-# So we inject relay URL/token now, and use __SELF_DISCOVER__ for browser WS.
-BRIDGE=$(mktemp /tmp/openclaw-bridge-XXXXX.html)
-curl -s "$SERVER/relay/bridge" > "$BRIDGE"
-sed -i "s|__RELAY_URL__|$WS_URL|g" "$BRIDGE"
-sed -i "s|__RELAY_TOKEN__|$RELAY_TOKEN|g" "$BRIDGE"
-# Browser WS URL will be discovered after Chrome starts — inject placeholder
-sed -i "s|__BROWSER_WS_URL__|__SELF_DISCOVER__|g" "$BRIDGE"
-
-# Launch Chrome with CDP and bridge as startup page
+# Launch Chrome with CDP and bridge page from server
 echo "🌐 Launching browser..."
 "$CHROME" \
     --remote-debugging-port=9222 \
     '--remote-allow-origins=*' \
     --user-data-dir="$HOME/OpenClawBrowser" \
     --no-first-run \
-    "file://$BRIDGE" 2>/dev/null &
+    "$SERVER/relay/bridge?launcher=$LAUNCHER_ID" 2>/dev/null &
 BROWSER_PID=$!
 
-# Wait for CDP to be ready
+# Wait for CDP to be ready and get browser WS URL
 echo -n "⏳ Waiting for CDP"
+BROWSER_WS=""
 for i in $(seq 1 30); do
     sleep 1
     VJSON=$(curl -s http://127.0.0.1:9222/json/version 2>/dev/null)
@@ -442,34 +496,26 @@ echo ""
 if [ -z "$BROWSER_WS" ]; then
     echo "❌ Chrome CDP not responding on port 9222"
     kill $BROWSER_PID 2>/dev/null
-    rm -f "$BRIDGE"
     exit 1
 fi
-echo "✅ CDP ready"
 
-# Now inject the real browser WS URL and reload the bridge
-sed -i "s|__SELF_DISCOVER__|$BROWSER_WS|g" "$BRIDGE"
-# Reload the bridge tab so it picks up the WS URL
-TAB_ID=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"id": *"[^"]*"' | head -1 | cut -d'"' -f4)
-if [ -n "$TAB_ID" ]; then
-    curl -s "http://127.0.0.1:9222/json/navigate/$TAB_ID?file://$BRIDGE" > /dev/null 2>&1
-fi
+# Send WS URL to server so bridge page can pick it up
+curl -s -X POST "$SERVER/relay/cdp-info?launcher=$LAUNCHER_ID" \
+    -H "Content-Type: application/json" \
+    -d "{\"wsUrl\":\"$BROWSER_WS\"}" > /dev/null
 
-echo "✅ Browser ready! Keep this terminal open."
-echo "   Close browser window to stop."
+echo "✅ Browser ready! Complete pairing in the browser tab."
+echo "   Keep this terminal open. Close browser to stop."
 wait $BROWSER_PID 2>/dev/null
-rm -f "$BRIDGE"
 echo "👋 Goodbye!"
-`, baseURL, wsURL, botUsername)
+`, baseURL)
 }
 
-func generateMacScript(baseURL, wsURL, botUsername string) string {
+func generateMacScript(baseURL string) string {
 	return fmt.Sprintf(`#!/bin/bash
 # OpenClaw Browser Launcher
 
 SERVER="%s"
-WS_URL="%s"
-BOT="%s"
 
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 if [ ! -f "$CHROME" ]; then
@@ -480,62 +526,19 @@ if [ -z "$CHROME" ] || [ ! -f "$CHROME" ]; then
     exit 1
 fi
 
-TOKEN_FILE="$HOME/.openclaw-relay-token"
-RELAY_TOKEN=""
-if [ -f "$TOKEN_FILE" ]; then
-    RELAY_TOKEN=$(cat "$TOKEN_FILE")
-    echo "🔑 Found saved session. Reconnecting..."
-fi
+LAUNCHER_ID=$(head -c 8 /dev/urandom | xxd -p)
 
-if [ -z "$RELAY_TOKEN" ]; then
-    echo "🦞 Getting pairing code..."
-    PAIR_RESP=$(curl -sf "$SERVER/relay/pair/new" 2>/dev/null || true)
-    if [ -z "$PAIR_RESP" ]; then echo "❌ Could not reach server"; exit 1; fi
-    CODE=$(echo "$PAIR_RESP" | grep -o '"code":"[^"]*"' | head -1 | cut -d'"' -f4)
-    PTOKEN=$(echo "$PAIR_RESP" | grep -o '"token":"[^"]*"' | head -1 | cut -d'"' -f4)
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "   Your pairing code:  $CODE"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "   Send to Ram: pair $CODE"
-    echo "   Or tap: https://t.me/${BOT}?start=pair_${CODE}"
-    echo ""
-    echo -n "⏳ Waiting"
-
-    for i in $(seq 1 150); do
-        STATUS=$(curl -sf "$SERVER/relay/pair/status?token=$PTOKEN" 2>/dev/null || true)
-        if echo "$STATUS" | grep -q '"activated":true'; then
-            RELAY_TOKEN=$(echo "$STATUS" | grep -o '"relayToken":"[^"]*"' | head -1 | cut -d'"' -f4)
-            break
-        fi
-        echo -n "."
-        sleep 2
-    done
-    echo ""
-    if [ -z "$RELAY_TOKEN" ]; then echo "❌ Timed out."; exit 1; fi
-    echo "$RELAY_TOKEN" > "$TOKEN_FILE"
-    echo "✅ Paired!"
-fi
-
-# Prepare bridge HTML before launching Chrome
-BRIDGE=$(mktemp /tmp/openclaw-bridge-XXXXX.html)
-curl -s "$SERVER/relay/bridge" > "$BRIDGE"
-sed -i '' "s|__RELAY_URL__|$WS_URL|g" "$BRIDGE"
-sed -i '' "s|__RELAY_TOKEN__|$RELAY_TOKEN|g" "$BRIDGE"
-sed -i '' "s|__BROWSER_WS_URL__|__SELF_DISCOVER__|g" "$BRIDGE"
-
-# Launch Chrome with CDP and bridge as startup page
 echo "🌐 Launching browser..."
 "$CHROME" \
     --remote-debugging-port=9222 \
     '--remote-allow-origins=*' \
     --user-data-dir="$HOME/OpenClawBrowser" \
     --no-first-run \
-    "file://$BRIDGE" 2>/dev/null &
+    "$SERVER/relay/bridge?launcher=$LAUNCHER_ID" 2>/dev/null &
 BROWSER_PID=$!
 
 echo -n "⏳ Waiting for CDP"
+BROWSER_WS=""
 for i in $(seq 1 30); do
     sleep 1
     VJSON=$(curl -s http://127.0.0.1:9222/json/version 2>/dev/null)
@@ -546,70 +549,25 @@ for i in $(seq 1 30); do
     echo -n "."
 done
 echo ""
-if [ -z "$BROWSER_WS" ]; then echo "❌ CDP not ready"; kill $BROWSER_PID 2>/dev/null; rm -f "$BRIDGE"; exit 1; fi
-echo "✅ CDP ready"
+if [ -z "$BROWSER_WS" ]; then echo "❌ CDP not ready"; kill $BROWSER_PID 2>/dev/null; exit 1; fi
 
-# Inject real browser WS URL and reload bridge
-sed -i '' "s|__SELF_DISCOVER__|$BROWSER_WS|g" "$BRIDGE"
-TAB_ID=$(curl -s "http://127.0.0.1:9222/json" | grep -o '"id": *"[^"]*"' | head -1 | cut -d'"' -f4)
-if [ -n "$TAB_ID" ]; then
-    curl -s "http://127.0.0.1:9222/json/navigate/$TAB_ID?file://$BRIDGE" > /dev/null 2>&1
-fi
+curl -s -X POST "$SERVER/relay/cdp-info?launcher=$LAUNCHER_ID" \
+    -H "Content-Type: application/json" \
+    -d "{\"wsUrl\":\"$BROWSER_WS\"}" > /dev/null
 
-echo "✅ Ready! Keep this terminal open."
+echo "✅ Browser ready! Complete pairing in the browser tab."
+echo "   Keep this terminal open."
 wait $BROWSER_PID 2>/dev/null
-rm -f "$BRIDGE"
 echo "👋 Goodbye!"
-`, baseURL, wsURL, botUsername)
+`, baseURL)
 }
 
-func generateWindowsScript(baseURL, wsURL, botUsername string) string {
-	escapedHTML := strings.ReplaceAll(bridgeHTML, "'", "''")
-	_ = escapedHTML
+func generateWindowsScript(baseURL string) string {
 	return fmt.Sprintf(`@echo off
 setlocal EnableDelayedExpansion
 REM OpenClaw Browser Launcher
 
 set "SERVER=%s"
-set "WS_URL=%s"
-set "BOT=%s"
-set "TOKEN_FILE=%%USERPROFILE%%\.openclaw-relay-token"
-set "RELAY_TOKEN="
-
-if exist "%%TOKEN_FILE%%" (
-    set /p RELAY_TOKEN=<"%%TOKEN_FILE%%"
-    echo Found saved session. Reconnecting...
-)
-
-if "%%RELAY_TOKEN%%"=="" (
-    echo Getting pairing code...
-    for /f "usebackq delims=" %%%%i in (`+"`"+`powershell -Command "$r = Invoke-RestMethod '%%SERVER%%/relay/pair/new'; Write-Host $r.code '|' $r.token"`+"`"+`) do (
-        for /f "tokens=1,2 delims=|" %%%%a in ("%%%%i") do (
-            set "CODE=%%%%a"
-            set "PTOKEN=%%%%b"
-        )
-    )
-    set "CODE=!CODE: =!"
-    set "PTOKEN=!PTOKEN: =!"
-    echo.
-    echo Your pairing code: !CODE!
-    echo Send to Ram: pair !CODE!
-    echo.
-    echo Waiting for pairing...
-    :POLL
-    powershell -Command "Start-Sleep 2"
-    for /f "usebackq delims=" %%%%i in (`+"`"+`powershell -Command "$r = Invoke-RestMethod '%%SERVER%%/relay/pair/status?token=%%PTOKEN%%'; if ($r.activated) { $r.relayToken } else { 'waiting' }"`+"`"+`) do set "RESULT=%%%%i"
-    if "%%RESULT%%"=="waiting" goto POLL
-    set "RELAY_TOKEN=%%RESULT%%"
-    echo %%RELAY_TOKEN%%>"%%TOKEN_FILE%%"
-    echo Paired!
-)
-
-echo Preparing bridge page...
-set "BRIDGE=%%TEMP%%\openclaw-bridge-%%RANDOM%%.html"
-powershell -Command "$h = @'
-%s
-'@; $h = $h.Replace('__RELAY_URL__','%%WS_URL%%').Replace('__RELAY_TOKEN__','%%RELAY_TOKEN%%').Replace('__BROWSER_WS_URL__','__SELF_DISCOVER__'); [IO.File]::WriteAllText('%%BRIDGE%%',$h,[Text.Encoding]::UTF8)"
 
 echo Launching browser...
 set "CHROME="
@@ -617,7 +575,9 @@ if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" set "CHROME=C:\
 if exist "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" set "CHROME=C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 if "%%CHROME%%"=="" ( echo Chrome not found! & pause & exit /b 1 )
 
-start "" "%%CHROME%%" --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%%USERPROFILE%%\OpenClawBrowser" --no-first-run "file:///%%BRIDGE%%"
+for /f "usebackq delims=" %%%%i in (`+"`"+`powershell -Command "[guid]::NewGuid().ToString('N').Substring(0,16)"`+"`"+`) do set "LAUNCHER_ID=%%%%i"
+
+start "" "%%CHROME%%" --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%%USERPROFILE%%\OpenClawBrowser" --no-first-run "%%SERVER%%/relay/bridge?launcher=%%LAUNCHER_ID%%"
 
 echo Waiting for CDP...
 :CDPWAIT
@@ -625,11 +585,10 @@ powershell -Command "Start-Sleep 1"
 for /f "usebackq delims=" %%%%i in (`+"`"+`powershell -Command "try { (Invoke-RestMethod 'http://localhost:9222/json/version').webSocketDebuggerUrl } catch { 'waiting' }"`+"`"+`) do set "BROWSER_WS=%%%%i"
 if "%%BROWSER_WS%%"=="waiting" goto CDPWAIT
 
-REM Inject real WS URL and reload bridge
-powershell -Command "$h = [IO.File]::ReadAllText('%%BRIDGE%%'); $h = $h.Replace('__SELF_DISCOVER__','%%BROWSER_WS%%'); [IO.File]::WriteAllText('%%BRIDGE%%',$h,[Text.Encoding]::UTF8)"
-powershell -Command "try { $tabs = Invoke-RestMethod 'http://localhost:9222/json'; $id = $tabs[0].id; Invoke-RestMethod ('http://localhost:9222/json/navigate/' + $id + '?file:///%%BRIDGE%%') } catch {}" >nul 2>&1
+powershell -Command "Invoke-RestMethod -Method Post -Uri '%%SERVER%%/relay/cdp-info?launcher=%%LAUNCHER_ID%%' -ContentType 'application/json' -Body ('{\"wsUrl\":\"' + '%%BROWSER_WS%%' + '\"}')" >nul 2>&1
 
-echo Ready! Keep this window open.
+echo Ready! Complete pairing in the browser tab.
+echo Keep this window open.
 pause
-`, baseURL, wsURL, botUsername, strings.ReplaceAll(bridgeHTML, "'", "''"))
+`, baseURL)
 }

@@ -457,6 +457,8 @@ func NewServer(cfg *Config) http.Handler {
 	mux.HandleFunc("/relay/cdp/json/list", rl.HandleCDPJsonList)
 	mux.HandleFunc("/relay/cdp/ws", rl.HandleCDPProxyWS)
 	mux.HandleFunc("/relay/cdp/status", rl.HandleCDPStatusJSON)
+	// Launcher <-> bridge coordination
+	mux.HandleFunc("/relay/cdp-info", rl.HandleCDPInfo)
 
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {
