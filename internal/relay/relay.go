@@ -18,11 +18,16 @@ var upgrader = websocket.Upgrader{
 // Relay holds the relay state and handlers.
 type Relay struct {
 	sessions *SessionManager
+	pairing  *PairingManager
 }
 
 // New creates a new Relay instance.
 func New() *Relay {
-	return &Relay{sessions: NewSessionManager()}
+	sm := NewSessionManager()
+	return &Relay{
+		sessions: sm,
+		pairing:  NewPairingManager(sm),
+	}
 }
 
 // Envelope is the message format between browser/agent and relay.

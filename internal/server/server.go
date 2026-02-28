@@ -118,12 +118,20 @@ func NewServer(cfg *Config) http.Handler {
 	// App-driven static routes
 	for _, app := range cfg.Apps {
 		for urlPrefix, route := range app.Routes {
-			if route.Type != "static" {
-				continue
-			}
-			absDir := filepath.Join(app.Dir, route.Dir)
-			if _, err := os.Stat(absDir); err == nil {
-				mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
+			switch route.Type {
+			case "static":
+				absDir := filepath.Join(app.Dir, route.Dir)
+				if _, err := os.Stat(absDir); err == nil {
+					mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
+				}
+			case "page":
+				filePath := filepath.Join(app.Dir, route.Dir, "index.html")
+				if _, err := os.Stat(filePath); err == nil {
+					fp := filePath // capture
+					mux.HandleFunc(urlPrefix, func(w http.ResponseWriter, r *http.Request) {
+						http.ServeFile(w, r, fp)
+					})
+				}
 			}
 		}
 	}
@@ -440,6 +448,9 @@ func NewServer(cfg *Config) http.Handler {
 	mux.HandleFunc("/relay/cdp", rl.HandleAgentWS)
 	mux.HandleFunc("/relay/download", rl.HandleDownload)
 	mux.HandleFunc("/relay/status", rl.HandleStatus)
+	mux.HandleFunc("/relay/pair/new", rl.HandlePairNew)
+	mux.HandleFunc("/relay/pair/status", rl.HandlePairStatus)
+	mux.HandleFunc("/relay/pair/activate", rl.HandlePairActivate)
 
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {

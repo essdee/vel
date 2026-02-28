@@ -217,6 +217,11 @@ func Check(r *http.Request) *User {
 	return nil
 }
 
+// CheckBotToken validates a token against the bot token.
+func CheckBotToken(token string) bool {
+	return token != "" && token == botToken
+}
+
 func hmacSHA256(key, data []byte) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write(data)
