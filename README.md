@@ -4,6 +4,8 @@
 
 <h1 align="center">⚡ Vel</h1>
 
+> ⚠️ **Pre-release software.** Vel is under active development and has not reached v1.0. APIs, config formats, and conventions may change between versions without notice. Use in production at your own risk.
+
 <p align="center">
   <strong>AI-native framework for real-time web apps. Single Go binary.</strong>
 </p>
