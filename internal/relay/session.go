@@ -30,6 +30,7 @@ type RelaySession struct {
 	ConnectedAt  time.Time
 	LastActivity time.Time
 	MsgCount     int64
+	CDPRawMode   bool // when true, agent WS speaks raw CDP (no envelope)
 	mu           sync.Mutex
 }
 

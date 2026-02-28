@@ -452,6 +452,11 @@ func NewServer(cfg *Config) http.Handler {
 	mux.HandleFunc("/relay/pair/new", rl.HandlePairNew)
 	mux.HandleFunc("/relay/pair/status", rl.HandlePairStatus)
 	mux.HandleFunc("/relay/pair/activate", rl.HandlePairActivate)
+	// CDP-compatible endpoints (for OpenClaw / standard CDP clients)
+	mux.HandleFunc("/relay/cdp/json/version", rl.HandleCDPJsonVersion)
+	mux.HandleFunc("/relay/cdp/json/list", rl.HandleCDPJsonList)
+	mux.HandleFunc("/relay/cdp/ws", rl.HandleCDPProxyWS)
+	mux.HandleFunc("/relay/cdp/status", rl.HandleCDPStatusJSON)
 
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {
@@ -543,7 +548,7 @@ func applyMiddleware(h http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 		// Gzip
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") && !strings.HasPrefix(r.URL.Path, "/relay/ws") && !strings.HasPrefix(r.URL.Path, "/relay/cdp") {
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") && !strings.HasPrefix(r.URL.Path, "/relay/ws") && !strings.HasPrefix(r.URL.Path, "/relay/cdp") && !strings.HasPrefix(r.URL.Path, "/relay/cdp/ws") {
 			w.Header().Set("Content-Encoding", "gzip")
 			gz := gzip.NewWriter(w)
 			defer gz.Close()

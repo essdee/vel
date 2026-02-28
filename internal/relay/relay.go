@@ -149,9 +149,15 @@ func (rl *Relay) HandleBrowserWS(w http.ResponseWriter, r *http.Request) {
 			// Forward to agent
 			sess.mu.Lock()
 			agentWS = sess.AgentWS
+			rawMode := sess.CDPRawMode
 			sess.mu.Unlock()
 			if agentWS != nil {
-				agentWS.WriteMessage(websocket.TextMessage, msg)
+				if rawMode {
+					// Raw CDP mode: unwrap envelope, send just the CDP data
+					agentWS.WriteMessage(websocket.TextMessage, env.Data)
+				} else {
+					agentWS.WriteMessage(websocket.TextMessage, msg)
+				}
 			}
 
 		case "pong":
