@@ -40,6 +40,16 @@ That's not a tagline — it's the architecture. Manifest-driven apps, sandboxed 
 
 ---
 
+## Why AI-native?
+
+AI agents write code that's 1.7× buggier than human code — especially around security, concurrency, and logic. The fix isn't better prompts. It's a framework where the insecure path doesn't exist, the wrong structure is rejected at build time, and the agent only writes the parts that matter.
+
+Vel enforces this through compile-time capability checks, manifest-driven validation, a five-function public API (less to hallucinate), and JSON-first declarations (agents corrupt JSON less than code). Every default is the safe default. Every error tells you how to fix it.
+
+📖 **[AI-Native Design Principles →](./AI-NATIVE.md)**
+
+---
+
 ## Apps built on Vel
 
 | App | What it does |
@@ -161,6 +171,7 @@ cd .. && ./vel build && ./vel
 
 | Doc | What it covers |
 |-----|---------------|
+| [AI-NATIVE.md](./AI-NATIVE.md) | Why Vel is designed for AI agents, and what that means |
 | [CONTRACTS.md](./CONTRACTS.md) | Panel contract, manifest schema, hooks, CSS |
 | [CONVENTIONS.md](./CONVENTIONS.md) | Decision framework |
 | [TESTING.md](./TESTING.md) | Testing strategy |
