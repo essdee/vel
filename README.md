@@ -4,36 +4,94 @@
 
 <h1 align="center">⚡ Vel</h1>
 
-> ⚠️ **Pre-release software.** Vel is under active development and has not reached v1.0. APIs, config formats, and conventions may change between versions without notice. Use in production at your own risk.
-
 <p align="center">
-  <strong>AI-native framework for real-time web apps. Single Go binary.</strong>
+  <strong>The framework where AI builds and the framework guarantees.</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.1.0--alpha-c9a84c?style=flat-square" alt="Version">
+  <img src="https://img.shields.io/badge/version-0.1.0-c9a84c?style=flat-square" alt="Version">
   <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square" alt="Go">
+  <img src="https://img.shields.io/badge/tests-89-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
 </p>
 
 ---
 
-## What is Vel?
+## Stop waiting for PRs
 
-Vel is a **Go framework** for building real-time panel-based web applications. You think in **panels** — self-contained UI components with manifest-driven configuration and live data via WebSocket.
+Every framework works the same way. You need a feature. You open an issue. Maybe someone builds it. Maybe they don't. You fork and maintain your own copy forever.
 
-**Core features:**
-- 🔲 **Panel system** — `manifest.json` + `ui.js` = a panel. Auto-discovered.
-- 🔌 **WebSocket-first** — All panels receive live data.
-- 🪝 **Hook engine** — Filters + actions, Go-native.
-- 🧩 **App system** — Apps can ship panels, routes, data sources, themes, and **Go server code**.
-- 🔐 **Telegram auth** — HMAC-SHA256, signed cookies, rate limiting.
-- 📦 **Single binary** — `vel build` compiles everything (framework + app server code) into one binary.
-- 🛡️ **Capability system** — Apps declare what stdlib/third-party packages they need; `vel build` enforces it.
+Vel is different. Tell your AI agent what you need. It builds it. The framework makes sure it can't break anything else.
+
+**Your agent writes the app. Vel guarantees it works.**
+
+That's not a tagline — it's the architecture. Manifest-driven apps, sandboxed capabilities, compile-time enforcement. The framework doesn't suggest how things should work. It enforces correctness structurally. AI writes two files, and it works. Every time.
 
 ---
 
-## Quick Start
+## What Vel gives you
+
+- **Single Go binary** — framework + all app code compiled into one binary. No runtime dependencies. No Node.js. No Python.
+- **App system** — apps are folders with a manifest. They ship panels, routes, data sources, Go server code. Drop an app in, rebuild, done.
+- **Panel system** — real-time UI components. `manifest.json` + `ui.js` = a live panel with WebSocket streaming, layout, and error handling built in.
+- **Capability system** — apps declare what they're allowed to import. `vel build` enforces it at compile time. Your agent can't accidentally import `os/exec`.
+- **Hook engine** — filters and actions, Go-native. Apps modify behaviour without touching framework code.
+- **Telegram auth** — HMAC-SHA256, signed cookies, rate limiting. One config, done.
+
+---
+
+## Apps built on Vel
+
+| App | What it does |
+|-----|-------------|
+| [Velboard](https://github.com/karthikeyan5/velboard) | The dashboard that builds itself. 9 live monitoring panels — and your agent builds the next ones. |
+| [VelReach](https://github.com/karthikeyan5/velreach) | Your agent can use your browser. Pair with a code, watch it work. No passwords shared. |
+
+These apps don't fork Vel. They don't conflict with each other. They compose. That's the point.
+
+---
+
+## How apps work
+
+An app is a folder in `apps/` with an `app.json`:
+
+```
+apps/my-app/
+├── app.json           # Manifest — name, capabilities, routes
+├── panels/            # Panel folders (manifest.json + ui.js each)
+└── server/            # Optional Go code (compiled into binary)
+```
+
+Apps can be panel-only (zero Go code) or ship full server-side logic. Either way, the framework handles discovery, routing, auth, streaming, and error boundaries.
+
+Apps compose. They don't conflict. Add one, remove one — nothing else changes.
+
+---
+
+## The roadmap
+
+Vel v0.1 is the foundation — apps, panels, auth, real-time streaming, capability-enforced builds. Everything structural is being frozen in v0.1 before feature work begins.
+
+| Version | Theme | What it unlocks |
+|---------|-------|-----------------|
+| **v0.1** ✅ | The Foundation | Apps, panels, WebSocket, auth, `vel build`, capability system |
+| **v0.2** | The Model | JSON schema → SQLite tables, auto CRUD APIs, migrations |
+| **v0.3** | The Desk | Auto-generated List/Form views from models, zero frontend code |
+| **v0.4** | The Guardian | Users, roles, row-level permissions |
+| **v0.5** | The Automator | Background jobs, scheduler, workflow engine |
+| **v0.6** | The Communicator | Email, PDF generation, webhooks |
+| **v0.7** | The Portal | Website routing, blog, full-text search, i18n |
+| **v0.8** | The Enterprise | Multi-tenancy, reports, dashboards, OAuth, S3 |
+| **v0.9** | The Ecosystem | App lifecycle, patches, fixtures, testing framework |
+| **v1.0** | The Rock | Security audit, load testing, documentation. No new features. |
+
+By v0.9, you can build anything — accounting, inventory, CRM, HR, manufacturing, e-commerce. As apps that compose on Vel.
+
+📋 **[Full roadmap →](https://github.com/essdee/vel-project-notes/blob/main/ROADMAP.md)**
+
+---
+
+## Quick start
 
 ```bash
 git clone https://github.com/essdee/vel.git
@@ -45,286 +103,57 @@ BOT_TOKEN=your-telegram-token ./vel
 
 Open `localhost:3700`.
 
----
-
-## Directory Structure
-
-```
-vel/
-├── main.go              # Entrypoint — `vel start`, `vel build`, `vel caps`
-├── internal/            # Framework internals
-│   ├── apps/            # App discovery (app.json parsing)
-│   ├── auth/            # Telegram HMAC + cookie signing
-│   ├── build/           # `vel build` — capability scanning, AST rewriting, compilation
-│   ├── cap/             # Capability definitions
-│   ├── data/            # Data handlers (system metrics)
-│   ├── datasource/      # File-based data sources with polling
-│   ├── hooks/           # Filter + action engine
-│   ├── panels/          # Panel discovery + registry
-│   ├── schema/          # Manifest validation
-│   └── server/          # HTTP + WebSocket + middleware
-├── pkg/vel/             # Public API for apps with Go server code
-│   ├── app.go           # RegisterApp, AppConfig, AppRegistration
-│   └── auth.go          # Check, IsAllowed, CheckBotToken, GetBotToken
-├── core/
-│   ├── panels/          # Built-in panels (manifest + ui.js)
-│   ├── vendor/          # Preact+HTM bundle (5KB, vendored)
-│   └── public/          # Shell, landing, CSS, service worker
-├── apps/                # Third-party apps (git-ignored)
-└── config.json          # Site config (git-ignored)
-```
-
----
-
-## CLI Commands
-
-### `vel start` (default)
-
-Starts the server. Flags: `--port`.
+### Add an app
 
 ```bash
-./vel start --port 3700
-# or just:
-./vel
-```
-
-### `vel build`
-
-Scans `apps/` for Go server code, checks import capabilities, and compiles a single binary.
-
-```bash
-./vel build                    # strict mode (default)
-./vel build --mode bypass      # log violations but don't fail
-./vel build --output myapp     # custom output name
-./vel build --keep             # keep _build/ for debugging
-```
-
-**What `vel build` does:**
-1. Discovers apps with `server/` directories containing Go code
-2. Scans all imports against the capability system (tier 1 always allowed, blacklisted always blocked, tier 2 requires declaration in `app.json`)
-3. Creates `_build/` directory with: real `main.go`, generated `appimports.go` (blank imports for app server packages), symlinked `internal/` and `pkg/`
-4. Generates capability wrappers for tier 2 imports
-5. Runs `go build`, outputs binary to project root
-6. Cleans up `_build/`
-
-### `vel caps`
-
-List or export app capabilities.
-
-```bash
-./vel caps list              # all apps
-./vel caps list myapp        # specific app
-./vel caps export myapp      # export capability report
+cd apps/
+git clone https://github.com/karthikeyan5/velboard.git
+cd .. && ./vel build && ./vel
 ```
 
 ---
 
-## The Panel System
+## v0.1 — what's here today
 
-A panel is a folder with two files:
+**5,756 lines of Go. 89 tests. 10 packages.**
 
-```
-panels/my-panel/
-├── manifest.json
-└── ui.js
-```
+### Core
+| Package | What it does |
+|---------|-------------|
+| `internal/apps` | App discovery — scans `apps/`, parses `app.json`, loads panels/routes/data sources |
+| `internal/auth` | Telegram HMAC-SHA256 + signed cookies + rate limiting + user whitelist |
+| `internal/build` | `vel build` — capability scanning, AST rewriting, app compilation into single binary |
+| `internal/cap` | Capability definitions — tier 1 (safe), tier 2 (declared), blacklisted |
+| `internal/data` | System data handlers — CPU, memory, disk, uptime, processes, crons, models, agent status |
+| `internal/datasource` | File-based data sources with configurable polling intervals |
+| `internal/hooks` | Filter + action engine (Go-native) |
+| `internal/panels` | Panel discovery + registry across core/custom/app directories |
+| `internal/schema` | Manifest validation with Elm-quality error messages |
+| `internal/server` | HTTP server + WebSocket streaming + middleware + static files |
 
-Panels are auto-discovered from `core/panels/`, `custom/panels/`, and `apps/*/panels/`.
+### Public API (`pkg/vel/`)
+| Function | Purpose |
+|----------|---------|
+| `RegisterApp(reg)` | Apps register routes from `init()` |
+| `Check(r)` | Returns authenticated user from request |
+| `IsAllowed(id)` | Check user against whitelist |
+| `CheckBotToken(token)` | Validate bot token |
+| `GetBotToken()` | Get configured bot token |
 
-See [`CONTRACTS.md`](./CONTRACTS.md) for the full panel contract.
+### CLI
+| Command | What it does |
+|---------|-------------|
+| `vel start` | Start the server (default command) |
+| `vel build` | Compile framework + app code into single binary |
+| `vel caps list [app]` | List capabilities for all or one app |
+| `vel caps export [app]` | Export capability report |
+| `vel version` | Print version |
 
----
-
-## App System
-
-Apps live in `apps/` and are defined by `app.json`:
-
-### Basic app (panels only)
-
-```json
-{
-  "name": "my-app",
-  "version": "1.0.0",
-  "title": "My App",
-  "panels": "panels"
-}
-```
-
-### App with Go server code
-
-```json
-{
-  "name": "my-app",
-  "version": "1.0.0",
-  "title": "My App",
-  "panels": "panels",
-  "routes": {
-    "/my-route": {"type": "page", "dir": "pages/my-route"}
-  },
-  "server": {
-    "package": "server"
-  },
-  "capabilities": {
-    "net": {},
-    "github.com/gorilla/websocket": {}
-  }
-}
-```
-
-When `"server"` is present, the app must have a `server/` directory with Go code. The server package must call `vel.RegisterApp()` from `init()`:
-
-```go
-package server
-
-import (
-    "net/http"
-    vel "vel/pkg/vel"
-)
-
-func init() {
-    vel.RegisterApp(vel.AppRegistration{
-        Name:     "my-app",
-        Register: Register,
-    })
-}
-
-func Register(mux *http.ServeMux, cfg vel.AppConfig) {
-    mux.HandleFunc("/my-app/api", handleAPI)
-}
-```
-
-**Requires `vel build`** to compile app server code into the binary.
-
-### app.json fields
-
-| Field | Description |
-|-------|-------------|
-| `name` | Lowercase, hyphens. Must match folder name. |
-| `version` | Semver |
-| `title` | Display name |
-| `description` | Short description |
-| `panels` | Directory containing panel folders (usually `"panels"`) |
-| `routes` | Map of URL path → `{type, dir}` for pages/static files |
-| `data_sources` | Named data sources (`{type: "file", path, interval}`) |
-| `server` | `{package: "server"}` — enables Go server code |
-| `capabilities` | Map of capability/package names → config. See capability system. |
-| `theme` | Path to theme CSS |
-
----
-
-## Public API (`pkg/vel/`)
-
-Apps with Go server code import `vel/pkg/vel`:
-
-### `app.go`
-
-```go
-// RegisterApp registers app routes. Call from init().
-vel.RegisterApp(vel.AppRegistration{
-    Name:     "my-app",
-    Register: func(mux *http.ServeMux, cfg vel.AppConfig) { ... },
-})
-```
-
-`AppConfig` provides: `Name`, `Dir` (app directory), `Workspace`.
-
-### `auth.go`
-
-```go
-vel.Check(r *http.Request) *vel.User  // Returns authenticated user or nil
-vel.IsAllowed(id int64) bool          // Check if user ID is in allowedUsers
-vel.CheckBotToken(token string) bool  // Validate against configured bot token
-vel.GetBotToken() string              // Get the configured bot token
-```
-
----
-
-## Capability System
-
-`vel build` enforces what packages app Go code can import:
-
-| Tier | Rule | Examples |
-|------|------|---------|
-| **Tier 1** (always allowed) | Safe stdlib + `vel/pkg/vel` | `fmt`, `strings`, `encoding/json`, `crypto/sha256` |
-| **Blacklisted** (always blocked) | Dangerous packages | `os/exec`, `syscall`, `unsafe`, `plugin`, `reflect` |
-| **Tier 2** (declared) | Requires capability in `app.json` | `net/http` needs `"net"`, `os` needs `"read"` or `"write"` |
-| **Third-party** | Must be listed in capabilities | `"github.com/gorilla/websocket": {}` |
-
-Site-level overrides via `vel.yaml`:
-
-```yaml
-capabilities:
-  block: ["os/exec"]
-  apps:
-    my-app:
-      allow: ["os"]
-```
-
----
-
-## Production Deployment
-
-Use `vel-prod/deploy.sh` pattern:
-
-```bash
-# git pull → vel build → deploy → restart
-cd /path/to/vel
-git pull
-cd apps/my-app && git pull && cd ../..
-./vel build
-sudo systemctl restart vel
-```
-
-See [`AGENT-SETUP.md`](./AGENT-SETUP.md) for full setup with nginx, systemd, and Telegram bot configuration.
-
----
-
-## Config
-
-```json
-{
-  "name": "My Agent",
-  "emoji": "🤖",
-  "accent": "#c9a84c",
-  "subtitle": "Always watching",
-  "botUsername": "mybot",
-  "allowedUsers": [123456789],
-  "port": 3700,
-  "panels": { "order": [], "disabled": [] },
-  "routes": {},
-  "apps": []
-}
-```
-
----
-
-## Security
-
-- **HMAC-SHA256** Telegram auth (timing-safe)
-- **Signed httpOnly cookies** for sessions
-- **Rate limiting** — auth: 10 req/15min, API: 1000 req/15min
-- **Security headers** — X-Content-Type-Options, X-Frame-Options, X-XSS-Protection
-- **WebSocket authenticates on connect**
-- **`allowedUsers` whitelist**
-
----
-
-## Development
-
-```bash
-go test ./... -race     # Run tests
-go build -o vel .       # Build (no app server code)
-./vel build             # Build with app server code
-TEST_MODE=true BOT_TOKEN=dummy ./vel  # Dev mode
-```
-
----
-
-## Built with Vel
-
-| App | Description |
-|-----|-------------|
-| [🦞 Clawboard](https://github.com/karthikeyan5/clawboard) | Dashboard + browser relay for OpenClaw agents — panels, Go server code for CDP relay |
+### Frontend
+- **Preact + HTM** — vendored (5KB), zero build step, native ES modules
+- **Responsive layout** — panels auto-arrange by size (half/full)
+- **Error boundaries** — panels fail independently
+- **Service worker** — offline-capable static assets
 
 ---
 
@@ -332,13 +161,10 @@ TEST_MODE=true BOT_TOKEN=dummy ./vel  # Dev mode
 
 | Doc | What it covers |
 |-----|---------------|
-| [`ARCHITECTURE.md`](./ARCHITECTURE.md) | WHY decisions |
-| [`CONTRACTS.md`](./CONTRACTS.md) | Panel contract, manifest schema, hooks, CSS |
-| [`CONVENTIONS.md`](./CONVENTIONS.md) | Decision framework |
-| [`TESTING.md`](./TESTING.md) | Testing strategy |
-| [`AGENT-EXTEND.md`](./AGENT-EXTEND.md) | AI agent playbook for extending Vel |
-| [`AGENT-SETUP.md`](./AGENT-SETUP.md) | AI agent setup instructions |
-| [`ROADMAP.md`](./ROADMAP.md) | Version plan |
+| [CONTRACTS.md](./CONTRACTS.md) | Panel contract, manifest schema, hooks, CSS |
+| [CONVENTIONS.md](./CONVENTIONS.md) | Decision framework |
+| [TESTING.md](./TESTING.md) | Testing strategy |
+| [AGENT-EXTEND.md](./AGENT-EXTEND.md) | AI agent playbook for building Vel apps |
 
 ---
 
