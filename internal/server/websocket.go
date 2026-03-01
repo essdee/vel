@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"vel/internal/auth"
@@ -135,6 +136,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 					for key, state := range cfg.DSManager.GetAllData() {
 						if _, exists := rawData[key]; !exists {
 							rawData[key] = state.Data
+						}
+						// Also add under short name (strip "appname:" prefix) for panel matching
+						if idx := strings.Index(key, ":"); idx >= 0 {
+							short := key[idx+1:]
+							if _, exists := rawData[short]; !exists {
+								rawData[short] = state.Data
+							}
 						}
 					}
 				}
