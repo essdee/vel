@@ -75,19 +75,22 @@ Vel errors include:
 
 Panel manifest validation already does this (Elm-quality messages). The model system, API layer, and build system will follow the same pattern. All errors will be available in both human-readable and JSON format — agents parse JSON better.
 
-### 6. Tiny API surface
+### 6. Predictable API, not just small API
 
-Every API an agent needs to learn is an API it might hallucinate. Vel's entire public API is five functions:
+A small API is easy to learn. A predictable API is easy to use correctly — even when it's large.
 
-```go
-vel.RegisterApp(reg)       // Register routes from init()
-vel.Check(r)               // Get authenticated user
-vel.IsAllowed(id)          // Check user whitelist
-vel.CheckBotToken(token)   // Validate bot token
-vel.GetBotToken()          // Get bot token
-```
+Today, Vel's public API is five functions. That will grow. The model system, permissions, workflows, and email will all add surface area. Pretending it won't is dishonest.
 
-That's it. The model system, permissions, and future features will add to this — but the principle holds: fewer functions, fewer hallucinations. Every addition to the public API is scrutinized.
+What matters isn't the count — it's the consistency. Every model should have the same methods. Every resource should follow the same URL pattern. Every error should have the same shape. An agent that understands how `Item` works should be able to work with `Invoice` without reading a single new line of documentation.
+
+The rules:
+- **Same patterns everywhere.** If `GET /api/resource/Item` lists items, then `GET /api/resource/Invoice` lists invoices. No exceptions.
+- **Same method signatures.** If `validate` takes `(doc, old)` on one model, it takes `(doc, old)` on every model.
+- **Same error shape.** Every error — validation, permission, not found, build failure — follows one envelope format.
+- **Discoverable.** `vel status` outputs every available API endpoint. An agent never guesses what exists.
+- **No aliases.** One name per concept. If it's called `on_update` in models, it's not called `after_save` somewhere else.
+
+A 50-function API where every function follows the same pattern is better than a 5-function API with special cases.
 
 ### 7. Token efficiency
 
@@ -138,6 +141,30 @@ These principles are grounded in published research on AI coding agent behaviour
 - **Stack Overflow** — 2025 Developer Survey (65% weekly AI agent usage)
 
 Full research document: [vel-project-notes/research/ai-agent-framework-design-principles.md](https://github.com/essdee/vel-project-notes/blob/main/research/ai-agent-framework-design-principles.md)
+
+---
+
+---
+
+## Open tensions
+
+These are known holes in the principles above. They don't have clean answers yet. They'll be resolved as the framework grows — but acknowledging them now is better than discovering them later.
+
+**When convention doesn't fit.** "One way to do everything" works for CRUD. Manufacturing BOMs, double-entry accounting, country-specific payroll — these are unconventional by nature. The framework needs a designed escape hatch: one explicit, auditable way to break convention when business logic demands it. Not hidden workarounds.
+
+**Humans debug what agents write.** Every principle optimises for AI writing code. None address a human debugging production at 2 AM. JSON manifests are great for agents, terrible for tracing why a request returned 403. The framework needs end-to-end request traceability — not just good errors, but observable execution.
+
+**JSON has limits.** "JSON for structure, code for logic" is the right direction. But where's the line? A 40-field invoice model with conditional required fields and computed totals pushes JSON to its limits. The boundary between declaration and code needs to be explicitly defined before the model system is built.
+
+**Runtime security isn't compile-time security.** The capability system prevents agents from importing dangerous packages. That's compile-time. But most real breaches are runtime: data leaking between tenants, users approving their own expenses, row-level access violations. The permission model (v0.4) must address this — compile-time guardrails alone aren't enough.
+
+**Agent capabilities change fast.** These principles are derived from 2025-2026 agent behaviour. Context windows went from 8K to 1M in two years. Token costs drop yearly. Principles based on current limitations could become unnecessarily restrictive. Every guardrail should be removable without refactoring — so the framework evolves with agents, not against them.
+
+**Why, not just what.** `vel status` will tell an agent what exists. It won't tell the agent *why* it exists — what constraints were discussed, what alternatives were rejected. Agents lose context between sessions. The framework should support decision provenance: a machine-readable history of why things are the way they are.
+
+**Reports need dynamic queries.** "Parameterized queries only, no raw SQL" is correct for user-facing data. But the roadmap includes a report builder (v0.9) that needs grouping, aggregation, joins, date ranges. The principle should distinguish between write paths (strict, safe) and read-only analytics (where controlled dynamic queries are necessary).
+
+**Reviewability.** An AI agent builds an app. A human needs to review it. How long does that take? If the framework's conventions are strong enough, a human should understand any Vel app's structure in minutes — not because they wrote it, but because every app looks the same. This is the flip side of "one way to do everything" and it's worth measuring.
 
 ---
 
