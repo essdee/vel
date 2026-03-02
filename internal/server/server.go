@@ -110,7 +110,19 @@ func NewServer(cfg *Config) http.Handler {
 		http.ServeFile(w, r, landingFile)
 	})
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "shell.html"))
+		// Check if any app has panels
+		hasPanels := false
+		for _, app := range cfg.Apps {
+			if app.Panels != "" {
+				hasPanels = true
+				break
+			}
+		}
+		if hasPanels {
+			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "shell.html"))
+		} else {
+			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "home.html"))
+		}
 	})
 
 	// Static files
