@@ -26,6 +26,7 @@ type App struct {
 	Models       string            `json:"models"`
 	Pages        string            `json:"pages"`
 	PanelOrder   []string          `json:"panelOrder"`
+	LandingPage  string            `json:"landingPage"`
 
 	Dir            string             `json:"-"`
 	ParsedSources  []ParsedDataSource `json:"-"`

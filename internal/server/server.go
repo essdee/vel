@@ -20,7 +20,6 @@ import (
 	"vel/internal/datasource"
 	"vel/internal/hooks"
 	"vel/internal/panels"
-	vel "vel/pkg/vel"
 )
 
 type Config struct {
@@ -92,13 +91,23 @@ func NewServer(cfg *Config) http.Handler {
 	apiLimiter := newRateLimiter(1000, 15*time.Minute, false)
 	authLimiter := newRateLimiter(10, 15*time.Minute, true)
 
-	// Pages
+	// Pages — check if any app provides a landing page
+	landingFile := filepath.Join(cfg.RootDir, "core", "public", "landing.html")
+	for _, app := range cfg.Apps {
+		if app.LandingPage != "" {
+			candidate := filepath.Join(app.Dir, app.LandingPage, "index.html")
+			if _, err := os.Stat(candidate); err == nil {
+				landingFile = candidate
+				break
+			}
+		}
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "landing.html"))
+		http.ServeFile(w, r, landingFile)
 	})
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "shell.html"))
@@ -118,20 +127,12 @@ func NewServer(cfg *Config) http.Handler {
 	// App-driven static routes
 	for _, app := range cfg.Apps {
 		for urlPrefix, route := range app.Routes {
-			switch route.Type {
-			case "static":
-				absDir := filepath.Join(app.Dir, route.Dir)
-				if _, err := os.Stat(absDir); err == nil {
-					mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
-				}
-			case "page":
-				filePath := filepath.Join(app.Dir, route.Dir, "index.html")
-				if _, err := os.Stat(filePath); err == nil {
-					fp := filePath // capture
-					mux.HandleFunc(urlPrefix, func(w http.ResponseWriter, r *http.Request) {
-						http.ServeFile(w, r, fp)
-					})
-				}
+			if route.Type != "static" {
+				continue
+			}
+			absDir := filepath.Join(app.Dir, route.Dir)
+			if _, err := os.Stat(absDir); err == nil {
+				mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
 			}
 		}
 	}
@@ -440,19 +441,6 @@ func NewServer(cfg *Config) http.Handler {
 		writeJSON(w, state)
 	})
 
-	// App-registered server routes
-	for _, reg := range vel.GetRegistrations() {
-		appDir := ""
-		for _, app := range cfg.Apps {
-			if app.Name == reg.Name {
-				appDir = app.Dir
-				break
-			}
-		}
-		appCfg := vel.AppConfig{Name: reg.Name, Dir: appDir, Workspace: cfg.Workspace}
-		reg.Register(mux, appCfg)
-	}
-
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, cfg)
@@ -543,7 +531,7 @@ func applyMiddleware(h http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 		// Gzip
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") && !strings.HasPrefix(r.URL.Path, "/relay/ws") && !strings.HasPrefix(r.URL.Path, "/relay/cdp") && !strings.HasPrefix(r.URL.Path, "/relay/cdp/ws") {
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") {
 			w.Header().Set("Content-Encoding", "gzip")
 			gz := gzip.NewWriter(w)
 			defer gz.Close()
