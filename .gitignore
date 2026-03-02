@@ -12,3 +12,6 @@ vell
 # OS
 .DS_Store
 Thumbs.db
+
+# Apps are standalone repos — cloned into apps/ at install time
+apps/
