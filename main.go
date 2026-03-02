@@ -48,11 +48,11 @@ type AppConfig struct {
 
 	// Auth
 	Auth struct {
-		AllowedUsers []int64 `json:"allowedUsers"`
+		AllowedTelegramUsers []int64 `json:"allowedTelegramUsers"`
 		Mode         string  `json:"mode"`
 		Token        string  `json:"token"`
 	} `json:"auth"`
-	AllowedUsers []int64 `json:"allowedUsers"` // legacy field
+	AllowedUsers []int64 `json:"allowedUsers"` // legacy (use auth.allowedTelegramUsers)
 
 	// Panels
 	Panels struct {
@@ -242,7 +242,7 @@ func runStart(args []string) {
 	}
 
 	// Merge allowed users
-	allowedUsers := config.Auth.AllowedUsers
+	allowedUsers := config.Auth.AllowedTelegramUsers
 	if len(allowedUsers) == 0 {
 		allowedUsers = config.AllowedUsers
 	}

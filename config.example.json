@@ -11,7 +11,7 @@
   "auth": {
     "mode": "",
     "token": "",
-    "allowedUsers": []
+    "allowedTelegramUsers": []
   },
   "allowedUsers": [],
   "port": 3700,
