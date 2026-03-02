@@ -41,10 +41,10 @@ go version || {
 ```bash
 git clone https://github.com/essdee/vel.git <install-dir>
 cd <install-dir>
-go build -o vel .
+go run . build
 ```
 
-> **Note:** If you install apps with server-side Go code (e.g., VelBridge), you must rebuild using `go run . build` instead of `go build`. See Step 4.
+This compiles Vel and any installed apps into a single `./vel` binary. After the first build, you can use `./vel build` instead of `go run . build`.
 
 ---
 
@@ -107,10 +107,10 @@ git clone https://github.com/karthikeyan5/velbridge.git
 After adding apps, rebuild to include their server-side code:
 
 ```bash
-cd <install-dir> && go run . build --mode=bypass
+cd <install-dir> && ./vel build
 ```
 
-This scans apps for Go server packages, generates imports, and compiles a single binary. Use `--mode=bypass` to skip strict capability checks during initial setup.
+This scans apps for Go server packages, generates imports, and compiles a single binary. If this is your first build (no `./vel` binary yet), use `go run . build` instead.
 
 ---
 
