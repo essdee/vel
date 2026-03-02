@@ -621,7 +621,8 @@ func applyMiddleware(h http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
 		// Gzip
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") {
+		isWebSocket := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") && !isWebSocket {
 			w.Header().Set("Content-Encoding", "gzip")
 			gz := gzip.NewWriter(w)
 			defer gz.Close()
