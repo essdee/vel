@@ -25,7 +25,7 @@ var Tier1Packages = map[string]bool{
 	"fmt": true, "strings": true, "strconv": true, "math": true, "math/big": true,
 	"time": true, "sort": true, "errors": true, "unicode": true, "unicode/utf8": true,
 	"bytes": true, "context": true, "sync": true, "maps": true, "slices": true, "cmp": true,
-	"hash": true, "path": true, "regexp": true,
+	"log": true, "hash": true, "path": true, "regexp": true,
 	"encoding/json": true, "encoding/xml": true, "encoding/csv": true,
 	"encoding/base64": true, "encoding/hex": true,
 	"crypto/sha256": true, "crypto/sha512": true, "crypto/md5": true,
