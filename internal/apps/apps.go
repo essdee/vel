@@ -25,6 +25,7 @@ type App struct {
 	Capabilities json.RawMessage   `json:"capabilities"`
 	Models       string            `json:"models"`
 	Pages        string            `json:"pages"`
+	PanelOrder   []string          `json:"panelOrder"`
 
 	Dir            string             `json:"-"`
 	ParsedSources  []ParsedDataSource `json:"-"`

@@ -387,7 +387,16 @@ func runStart(args []string) {
 	}
 
 	// Ensure non-nil slices (avoid null in JSON)
+	// Priority: config.json panels.order > app.json panelOrder > empty
 	panelOrder := config.Panels.Order
+	if len(panelOrder) == 0 {
+		// Fallback: collect panelOrder from discovered apps
+		for _, a := range discoveredApps {
+			if len(a.PanelOrder) > 0 {
+				panelOrder = append(panelOrder, a.PanelOrder...)
+			}
+		}
+	}
 	if panelOrder == nil {
 		panelOrder = []string{}
 	}
