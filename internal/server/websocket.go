@@ -70,6 +70,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 			user = &auth.User{ID: 0, FirstName: "Test"}
 		}
 
+		// "none" mode bypass
+		if auth.GetAuthMode() == "none" && user == nil {
+			user = &auth.User{ID: 1, FirstName: "Admin", Username: "admin"}
+		}
+
 		if user == nil || !auth.IsAllowed(user.ID) {
 			conn.WriteJSON(map[string]interface{}{"type": "auth", "ok": false})
 			conn.Close()

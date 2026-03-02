@@ -429,6 +429,15 @@
       <div id="tg-login-placeholder" class="tg-login-btn">⏳ Loading Telegram Login...</div>
     </div>
 
+    <!-- Token login (hidden by default) -->
+    <div class="login-section hidden" id="token-login-area">
+      <form id="token-login-form" style="display:flex;gap:8px;justify-content:center;align-items:center;">
+        <input type="password" id="token-input" placeholder="Enter access token" style="padding:10px 16px;border-radius:10px;border:1px solid var(--card-border);background:var(--card);color:var(--text);font-size:0.9rem;width:220px;outline:none;" />
+        <button type="submit" style="padding:10px 20px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:0.9rem;">Login</button>
+      </form>
+      <div id="token-error" style="color:#ff4444;font-size:0.8rem;margin-top:8px;" class="hidden"></div>
+    </div>
+
     <!-- Telegram link (if configured) -->
     <a class="cta-link hidden" id="tg-link" href="#">
       💬 <span id="tg-link-text">Open in Telegram</span>
@@ -480,8 +489,40 @@
         }
       }
 
-      // Telegram login widget
-      if (cfg.botUsername && cfg.authUrl) {
+      // Auth mode handling
+      const authMode = cfg.authMode || 'telegram';
+
+      if (authMode === 'none') {
+        // No login needed, redirect to dashboard
+        document.getElementById('tg-login-placeholder').textContent = '';
+        window.location.href = '/dashboard';
+      } else if (authMode === 'token') {
+        // Show token login form
+        document.getElementById('tg-login-area').classList.add('hidden');
+        document.getElementById('token-login-area').classList.remove('hidden');
+        document.getElementById('token-login-form').addEventListener('submit', function(e) {
+          e.preventDefault();
+          const token = document.getElementById('token-input').value;
+          fetch('/auth/token', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({token: token})
+          }).then(r => r.json()).then(res => {
+            if (res.ok) {
+              window.location.href = '/dashboard';
+            } else {
+              const err = document.getElementById('token-error');
+              err.textContent = 'Invalid token';
+              err.classList.remove('hidden');
+            }
+          }).catch(() => {
+            const err = document.getElementById('token-error');
+            err.textContent = 'Login failed';
+            err.classList.remove('hidden');
+          });
+        });
+      } else if (cfg.botUsername && cfg.authUrl) {
+        // Telegram login widget
         const loginArea = document.getElementById('tg-login-area');
         const script = document.createElement('script');
         script.async = true;

@@ -8,6 +8,11 @@
   "botUsername": "",
   "authUrl": "",
   "telegramLink": "",
+  "auth": {
+    "mode": "",
+    "token": "",
+    "allowedUsers": []
+  },
   "allowedUsers": [],
   "port": 3700,
   "panels": {

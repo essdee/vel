@@ -19,6 +19,8 @@ var (
 	botToken     string
 	allowedUsers map[int64]bool
 	cookieSecret string
+	authMode     string // "telegram", "token", "none"
+	authToken    string
 )
 
 func Init(token string, allowed []int64, secret string) {
@@ -28,6 +30,22 @@ func Init(token string, allowed []int64, secret string) {
 		allowedUsers[id] = true
 	}
 	cookieSecret = secret
+}
+
+// InitMode sets the auth mode and token for token-based auth.
+func InitMode(mode, token string) {
+	authMode = mode
+	authToken = token
+}
+
+// GetAuthMode returns the current auth mode.
+func GetAuthMode() string {
+	return authMode
+}
+
+// ValidateToken checks if the provided token matches the configured auth token.
+func ValidateToken(token string) bool {
+	return authToken != "" && token == authToken
 }
 
 func IsTestMode() bool {
@@ -142,6 +160,9 @@ func IsAllowed(userID int64) bool {
 	if IsTestMode() {
 		return true
 	}
+	if authMode == "token" || authMode == "none" {
+		return true
+	}
 	return allowedUsers[userID]
 }
 
@@ -209,11 +230,26 @@ func Check(r *http.Request) *User {
 		return &User{ID: 0, FirstName: "Test", Username: "test"}
 	}
 
-	// Try cookie
+	// "none" mode: always return default user
+	if authMode == "none" {
+		return &User{ID: 1, FirstName: "Admin", Username: "admin"}
+	}
+
+	// Try cookie (works for both telegram and token modes)
 	user := GetUserFromCookie(r)
 	if user != nil && IsAllowed(user.ID) {
 		return user
 	}
+
+	// Try Bearer token header (token mode)
+	if authMode == "token" {
+		if bearer := r.Header.Get("Authorization"); strings.HasPrefix(bearer, "Bearer ") {
+			if ValidateToken(strings.TrimPrefix(bearer, "Bearer ")) {
+				return &User{ID: 1, FirstName: "Admin", Username: "admin"}
+			}
+		}
+	}
+
 	return nil
 }
 

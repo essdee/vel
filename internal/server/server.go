@@ -221,14 +221,18 @@ func NewServer(cfg *Config) http.Handler {
 			return
 		}
 
-		// GET
-		user := auth.GetUserFromCookie(r)
-		if user == nil || !auth.IsAllowed(user.ID) {
+		// GET — also return authMode
+		resp := map[string]interface{}{"authMode": auth.GetAuthMode()}
+		user := auth.Check(r)
+		if user == nil {
 			w.WriteHeader(401)
-			writeJSON(w, map[string]interface{}{"ok": false})
+			resp["ok"] = false
+			writeJSON(w, resp)
 			return
 		}
-		writeJSON(w, map[string]interface{}{"ok": true, "user": user})
+		resp["ok"] = true
+		resp["user"] = user
+		writeJSON(w, resp)
 	})
 
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
@@ -371,6 +375,43 @@ func NewServer(cfg *Config) http.Handler {
 			Path:     "/",
 		})
 		http.Redirect(w, r, "/dashboard", http.StatusFound)
+	})
+
+	// Token auth login
+	mux.HandleFunc("/auth/token", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		if !authLimiter.allow(getClientIP(r)) {
+			http.Error(w, "Too many requests", 429)
+			return
+		}
+		var body struct {
+			Token string `json:"token"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if !auth.ValidateToken(body.Token) {
+			w.WriteHeader(401)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "Invalid token"})
+			return
+		}
+		userInfo, _ := json.Marshal(map[string]interface{}{
+			"id":         1,
+			"first_name": "Admin",
+			"username":   "admin",
+		})
+		signed := auth.SignCookie(string(userInfo))
+		http.SetCookie(w, &http.Cookie{
+			Name:     "tg_user",
+			Value:    signed,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+			MaxAge:   7 * 24 * 60 * 60,
+			Path:     "/",
+		})
+		writeJSON(w, map[string]interface{}{"ok": true})
 	})
 
 	// Dev auto-login (TEST_MODE only)

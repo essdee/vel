@@ -49,6 +49,8 @@ type AppConfig struct {
 	// Auth
 	Auth struct {
 		AllowedUsers []int64 `json:"allowedUsers"`
+		Mode         string  `json:"mode"`
+		Token        string  `json:"token"`
 	} `json:"auth"`
 	AllowedUsers []int64 `json:"allowedUsers"` // legacy field
 
@@ -207,9 +209,25 @@ func runStart(args []string) {
 			}
 		}
 	}
-	if botToken == "" {
-		log.Fatal("[Fatal] BOT_TOKEN environment variable is required")
+
+	// Determine auth mode
+	authMode := config.Auth.Mode
+	if authMode == "" {
+		// Auto-detect mode
+		if botToken != "" {
+			authMode = "telegram"
+		} else if config.Auth.Token != "" {
+			authMode = "token"
+		} else {
+			authMode = "none"
+		}
 	}
+
+	if authMode == "telegram" && botToken == "" {
+		log.Fatal("[Fatal] BOT_TOKEN is required for telegram auth mode")
+	}
+
+	fmt.Printf("[Auth] Mode: %s\n", authMode)
 
 	// Cookie secret
 	cookieSecretFile := filepath.Join(rootDir, ".cookie-secret")
@@ -231,6 +249,7 @@ func runStart(args []string) {
 
 	// Init auth
 	auth.Init(botToken, allowedUsers, strings.TrimSpace(string(cookieSecret)))
+	auth.InitMode(authMode, config.Auth.Token)
 
 	// Port: flag > env PORT > config.server.port > config.port > 3700
 	port := *portFlag
@@ -349,7 +368,9 @@ func runStart(args []string) {
 	}
 
 	// Build public config (safe to expose — no tokens, no secrets)
-	publicConfig := map[string]interface{}{}
+	publicConfig := map[string]interface{}{
+		"authMode": authMode,
+	}
 	if config.Name != "" {
 		publicConfig["name"] = config.Name
 	}
