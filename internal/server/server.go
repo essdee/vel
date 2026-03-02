@@ -107,9 +107,13 @@ func NewServer(cfg *Config) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
 		http.ServeFile(w, r, landingFile)
 	})
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
 		// Check if any app has panels
 		hasPanels := false
 		for _, app := range cfg.Apps {
