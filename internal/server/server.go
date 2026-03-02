@@ -229,6 +229,21 @@ func NewServer(cfg *Config) http.Handler {
 				writeJSON(w, map[string]interface{}{"ok": false})
 				return
 			}
+			// Set cookie so subsequent requests are authenticated
+			userInfo, _ := json.Marshal(map[string]interface{}{
+				"id":         user.ID,
+				"first_name": user.FirstName,
+				"username":   user.Username,
+			})
+			signed := auth.SignCookie(string(userInfo))
+			http.SetCookie(w, &http.Cookie{
+				Name:     "tg_user",
+				Value:    signed,
+				HttpOnly: true,
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   7 * 24 * 60 * 60,
+				Path:     "/",
+			})
 			writeJSON(w, map[string]interface{}{"ok": true, "user": map[string]interface{}{"id": user.ID, "first_name": user.FirstName}})
 			return
 		}

@@ -454,7 +454,13 @@
   <script>
     // Auto-redirect Mini App users to dashboard
     if (window.Telegram?.WebApp?.initData) {
-      window.location.href = '/dashboard';
+      fetch('/api/auth', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({initData: window.Telegram.WebApp.initData})
+      }).then(r => r.json()).then(data => {
+        if (data.ok) window.location.href = '/dashboard';
+      }).catch(() => {});
     }
 
     // Dev mode: auto-login via /auth/dev
