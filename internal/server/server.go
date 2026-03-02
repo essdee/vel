@@ -121,7 +121,7 @@ func NewServer(cfg *Config) http.Handler {
 		if hasPanels {
 			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "shell.html"))
 		} else {
-			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "home.html"))
+			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "welcome.html"))
 		}
 	})
 

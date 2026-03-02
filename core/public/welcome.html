@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vel — Ready</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #06060e;
+      --card: #10101e;
+      --card-border: rgba(255, 255, 255, 0.06);
+      --accent: #ff6b35;
+      --accent-dim: rgba(255, 107, 53, 0.10);
+      --text: #e8e8f0;
+      --text-dim: #6a6a7a;
+      --text-mid: #9a9aaa;
+      --green: #4ade80;
+    }
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .container {
+      max-width: 440px;
+      width: 100%;
+      padding: 24px;
+      text-align: center;
+    }
+    .check {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: rgba(74, 222, 128, 0.1);
+      border: 2px solid rgba(74, 222, 128, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 24px;
+      font-size: 1.8rem;
+    }
+    h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: var(--text-mid);
+      font-size: 0.9rem;
+      margin-bottom: 40px;
+      line-height: 1.5;
+    }
+    .next-step {
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px 24px;
+      text-align: left;
+      margin-bottom: 16px;
+    }
+    .next-step h3 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: var(--text);
+    }
+    .next-step p {
+      font-size: 0.82rem;
+      color: var(--text-mid);
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+    .next-step code {
+      display: block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: var(--accent);
+      line-height: 1.7;
+      overflow-x: auto;
+      white-space: pre;
+    }
+    .apps {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+    .app-card {
+      flex: 1;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 16px;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.2s;
+    }
+    .app-card:hover {
+      border-color: rgba(255,107,53,0.2);
+    }
+    .app-card .icon {
+      font-size: 1.4rem;
+      margin-bottom: 8px;
+    }
+    .app-card .name {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .app-card .desc {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+    .footer {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-top: 40px;
+    }
+    .footer a {
+      color: var(--accent);
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="check">✓</div>
+    <h1>Vel is running</h1>
+    <p class="subtitle">You're authenticated. No apps are installed yet — install one to get started.</p>
+
+    <div class="apps">
+      <a class="app-card" href="https://github.com/karthikeyan5/velboard" target="_blank">
+        <div class="icon">📊</div>
+        <div class="name">Velboard</div>
+        <div class="desc">Dashboard that builds itself. 11 panels, real-time updates.</div>
+      </a>
+      <a class="app-card" href="https://github.com/karthikeyan5/velbridge" target="_blank">
+        <div class="icon">🌐</div>
+        <div class="name">VelBridge</div>
+        <div class="desc">Your agent uses YOUR browser. Pair, watch, unpair.</div>
+      </a>
+    </div>
+
+    <div class="next-step" style="margin-top: 24px;">
+      <h3>Install an app</h3>
+      <p>Clone an app into the <code style="display:inline;padding:2px 6px;margin:0;">apps/</code> directory, rebuild, and restart:</p>
+      <code>cd apps/
+git clone https://github.com/karthikeyan5/velboard
+cd ..
+./vel build
+# restart your service</code>
+    </div>
+
+    <div class="footer">
+      powered by <a href="https://github.com/essdee/vel">vel</a>
+    </div>
+  </div>
+</body>
+</html>
