@@ -5,454 +5,207 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Vel</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
       --bg: #06060e;
       --card: #10101e;
-      --card-border: rgba(255, 107, 53, 0.08);
+      --card-border: rgba(255, 255, 255, 0.06);
       --accent: #ff6b35;
       --accent-dim: rgba(255, 107, 53, 0.12);
-      --accent-glow: rgba(255, 107, 53, 0.25);
       --text: #e8e8f0;
       --text-dim: #6a6a7a;
       --text-mid: #9a9aaa;
+      --green: #4ade80;
     }
     body {
       font-family: 'Inter', -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
-      overflow-x: hidden;
-    }
-
-    /* Animated background */
-    .bg-grid {
-      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-      background-image:
-        linear-gradient(rgba(255,107,53,0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,107,53,0.02) 1px, transparent 1px);
-      background-size: 60px 60px;
-      z-index: 0;
-    }
-    .bg-glow-1 {
-      position: fixed; top: -200px; left: 50%; transform: translateX(-50%);
-      width: 600px; height: 600px;
-      background: radial-gradient(circle, rgba(255,107,53,0.1) 0%, transparent 60%);
-      z-index: 0;
-      animation: pulse 8s ease-in-out infinite;
-    }
-    .bg-glow-2 {
-      position: fixed; bottom: -200px; right: -100px;
-      width: 500px; height: 500px;
-      background: radial-gradient(circle, rgba(255,107,53,0.05) 0%, transparent 65%);
-      z-index: 0;
-      animation: pulse 12s ease-in-out infinite reverse;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(1); }
-      50% { opacity: 1; transform: translateX(-50%) scale(1.1); }
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     .container {
-      position: relative; z-index: 1;
-      max-width: 480px; margin: 0 auto;
-      padding: 60px 24px 40px;
-      min-height: 100vh;
-      display: flex; flex-direction: column; align-items: center;
+      max-width: 400px;
+      width: 100%;
+      padding: 24px;
+      text-align: center;
     }
 
-    /* Logo mark */
-    .logo-mark {
-      width: 100px; height: 100px;
-      display: flex; align-items: center; justify-content: center;
+    /* Spear icon */
+    .logo {
       margin-bottom: 32px;
-      position: relative;
     }
-    .logo-mark::before {
-      content: '';
-      position: absolute; inset: -8px;
-      background: linear-gradient(135deg, var(--accent), transparent 60%);
-      border-radius: 24px;
-      opacity: 0.15;
-      animation: logo-glow 4s ease-in-out infinite;
+    .logo svg {
+      width: 48px;
+      height: 48px;
     }
-    @keyframes logo-glow {
-      0%, 100% { opacity: 0.15; }
-      50% { opacity: 0.3; }
-    }
-    .logo-svg {
-      width: 80px; height: 80px;
-    }
-
-    /* Spear SVG */
-    .spear-path {
-      fill: none;
+    .spear-tip { fill: var(--accent); }
+    .spear-line {
       stroke: var(--accent);
       stroke-width: 2.5;
       stroke-linecap: round;
-      stroke-linejoin: round;
-    }
-    .spear-tip {
-      fill: var(--accent);
     }
 
-    /* Title */
     .title {
       font-family: 'Space Grotesk', sans-serif;
-      font-size: 3.5rem;
-      font-weight: 800;
-      letter-spacing: -2px;
-      background: linear-gradient(135deg, var(--accent), #ff9a6c);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -1px;
+      color: var(--text);
       margin-bottom: 8px;
     }
-    .subtitle {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.75rem;
-      color: var(--text-dim);
-      letter-spacing: 3px;
-      text-transform: uppercase;
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--green);
       margin-bottom: 40px;
     }
-
-    /* Tagline */
-    .tagline {
-      font-size: 1.1rem;
-      line-height: 1.6;
-      color: var(--text-mid);
-      text-align: center;
-      margin-bottom: 48px;
-      max-width: 380px;
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--green);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
     }
-    .tagline strong {
-      color: var(--text);
-      font-weight: 500;
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
 
-    /* Stats row */
-    .stats {
-      display: flex; gap: 32px;
-      margin-bottom: 48px;
-    }
-    .stat {
-      text-align: center;
-    }
-    .stat-value {
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 1.5rem;
-      font-weight: 700;
-      color: var(--accent);
-    }
-    .stat-label {
-      font-size: 0.7rem;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      margin-top: 4px;
-    }
-
-    /* Feature cards */
-    .features {
-      width: 100%;
-      display: flex; flex-direction: column; gap: 12px;
-      margin-bottom: 48px;
-    }
-    .feature {
-      background: var(--card);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      padding: 16px 20px;
-      display: flex; align-items: center; gap: 14px;
-      transition: border-color 0.2s, transform 0.2s;
-    }
-    .feature:hover {
-      border-color: rgba(255,107,53,0.2);
-      transform: translateY(-1px);
-    }
-    .feature-icon {
-      font-size: 1.3rem;
-      width: 36px; height: 36px;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--accent-dim);
-      border-radius: 10px;
-      flex-shrink: 0;
-    }
-    .feature-text {
-      font-size: 0.85rem;
-      color: var(--text-mid);
-      line-height: 1.4;
-    }
-    .feature-text strong {
-      color: var(--text);
-      font-weight: 500;
-    }
-
-    /* Code block */
-    .code-block {
-      width: 100%;
-      background: #0a0a16;
-      border: 1px solid rgba(255,107,53,0.06);
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 48px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      line-height: 1.7;
-      color: var(--text-dim);
-      overflow-x: auto;
-    }
-    .code-block .comment { color: #4a4a5a; }
-    .code-block .cmd { color: var(--accent); }
-    .code-block .flag { color: #ff9a6c; }
-
-    /* Dynamic section — filled by config */
-    .agent-section {
-      width: 100%;
-      text-align: center;
-      margin-bottom: 40px;
-    }
-    .agent-avatar {
-      width: 64px; height: 64px;
-      background: var(--card);
-      border: 2px solid var(--card-border);
-      border-radius: 16px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.8rem;
-      margin: 0 auto 12px;
-    }
-    .agent-name {
-      font-family: 'Space Grotesk', sans-serif;
-      font-size: 1.3rem;
-      font-weight: 700;
-      color: var(--text);
-    }
-    .agent-role {
-      font-size: 0.75rem;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      margin-top: 4px;
-    }
-    .agent-quote {
-      font-style: italic;
-      color: var(--text-mid);
-      font-size: 0.85rem;
-      margin-top: 16px;
-      max-width: 320px;
-      margin-left: auto; margin-right: auto;
-      line-height: 1.5;
-    }
-    .agent-traits {
-      display: flex; gap: 8px; justify-content: center;
-      margin-top: 16px; flex-wrap: wrap;
-    }
-    .trait {
-      font-size: 0.7rem;
-      padding: 4px 12px;
-      background: var(--accent-dim);
-      color: var(--accent);
-      border-radius: 100px;
-      font-weight: 500;
-      letter-spacing: 0.5px;
-    }
-
-    /* Login section */
+    /* Login area */
     .login-section {
-      width: 100%;
-      text-align: center;
       margin-bottom: 32px;
       min-height: 44px;
     }
-    .tg-login-btn {
+    .login-section.ready .login-placeholder { display: none; }
+    .login-placeholder {
       color: var(--text-dim);
       font-size: 0.8rem;
     }
-    .login-section.ready .tg-login-btn { display: none; }
 
-    /* CTA button */
-    .cta-link {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 14px 32px;
-      background: linear-gradient(135deg, var(--accent), #ff8c57);
+    /* Token login */
+    .token-form {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      align-items: center;
+    }
+    .token-form input {
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--card-border);
+      background: var(--card);
+      color: var(--text);
+      font-size: 0.85rem;
+      width: 200px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .token-form input:focus {
+      border-color: rgba(255,107,53,0.3);
+    }
+    .token-form button {
+      padding: 10px 20px;
+      border-radius: 10px;
+      border: none;
+      background: var(--accent);
       color: #fff;
-      font-family: 'Space Grotesk', sans-serif;
       font-weight: 600;
-      font-size: 0.95rem;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: opacity 0.2s;
+    }
+    .token-form button:hover { opacity: 0.9; }
+    .token-error {
+      color: #ff4444;
+      font-size: 0.8rem;
+      margin-top: 8px;
+    }
+
+    /* CTA */
+    .cta-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 28px;
+      background: var(--card);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+      font-size: 0.85rem;
       text-decoration: none;
-      border-radius: 12px;
-      transition: transform 0.2s, box-shadow 0.2s;
-      box-shadow: 0 4px 24px rgba(255,107,53,0.25);
+      border-radius: 10px;
+      transition: border-color 0.2s;
       margin-bottom: 32px;
     }
     .cta-link:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 32px rgba(255,107,53,0.35);
+      border-color: rgba(255,255,255,0.12);
     }
 
-    /* Divider */
-    .divider {
-      width: 40px; height: 2px;
-      background: var(--accent);
-      opacity: 0.3;
-      border-radius: 1px;
-      margin: 8px auto 32px;
-    }
-
-    /* Footer */
     .footer {
       font-size: 0.7rem;
       color: var(--text-dim);
-      text-align: center;
-      margin-top: auto;
-      padding-top: 24px;
+      margin-top: 48px;
     }
     .footer a {
       color: var(--accent);
       text-decoration: none;
     }
 
-    .status-dot {
-      display: inline-block;
-      width: 8px; height: 8px;
-      background: #4ade80;
-      border-radius: 50%;
-      margin-right: 6px;
-      animation: blink 2s ease-in-out infinite;
-    }
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
-    }
-
     .hidden { display: none; }
   </style>
 </head>
 <body>
-  <div class="bg-grid"></div>
-  <div class="bg-glow-1"></div>
-  <div class="bg-glow-2"></div>
-
   <div class="container">
     <!-- Logo -->
-    <div class="logo-mark">
-      <svg class="logo-svg" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
-        <!-- Vel spear tip -->
-        <path class="spear-tip" d="M40 8 L48 28 L40 24 L32 28 Z" />
-        <!-- Spear shaft -->
-        <line class="spear-path" x1="40" y1="24" x2="40" y2="68" />
-        <!-- Cross guard -->
-        <path class="spear-path" d="M30 36 Q40 32 50 36" />
-        <!-- Base -->
-        <circle cx="40" cy="68" r="3" fill="var(--accent)" opacity="0.4" />
+    <div class="logo">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <path class="spear-tip" d="M24 4 L30 18 L24 15 L18 18 Z" />
+        <line class="spear-line" x1="24" y1="15" x2="24" y2="42" />
+        <circle cx="24" cy="42" r="2" fill="var(--accent)" opacity="0.3" />
       </svg>
     </div>
 
-    <div class="title">vel</div>
-    <div class="subtitle">the framework that strikes</div>
-
-    <div class="tagline">
-      <strong>AI-native web framework.</strong> Single Go binary. Real-time panels. Manifest-driven. Your app runs before they finish reading this.
+    <div class="title" id="title">Vel</div>
+    <div class="status">
+      <span class="status-dot"></span>
+      Running
     </div>
 
-    <!-- Stats -->
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-value">4ms</div>
-        <div class="stat-label">TTFB</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">2.6MB</div>
-        <div class="stat-label">Memory</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">10MB</div>
-        <div class="stat-label">Binary</div>
-      </div>
-      <div class="stat">
-        <div class="stat-value">76ms</div>
-        <div class="stat-label">Full Load</div>
-      </div>
-    </div>
-
-    <!-- Features -->
-    <div class="features">
-      <div class="feature">
-        <div class="feature-icon">⚡</div>
-        <div class="feature-text"><strong>Single binary.</strong> No runtime, no dependencies. Build → deploy → done.</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">📐</div>
-        <div class="feature-text"><strong>Manifest-driven panels.</strong> Drop a folder, restart. Your UI auto-discovers.</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">🔌</div>
-        <div class="feature-text"><strong>Hooks + Plugins.</strong> Filter data, extend behavior, install community panels.</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">🔐</div>
-        <div class="feature-text"><strong>Telegram-native auth.</strong> HMAC-SHA256. Mini App + browser. Zero setup.</div>
-      </div>
-      <div class="feature">
-        <div class="feature-icon">📡</div>
-        <div class="feature-text"><strong>WebSocket-first.</strong> 2-second live updates. No polling. No refresh.</div>
-      </div>
-    </div>
-
-    <!-- Quick start -->
-    <div class="code-block">
-      <span class="comment"># Get started in 30 seconds</span><br>
-      <span class="cmd">git clone</span> github.com/essdee/vel myapp<br>
-      <span class="cmd">cd</span> myapp<br>
-      <span class="cmd">go build</span> <span class="flag">-o</span> myapp .<br>
-      <span class="cmd">./myapp</span><br>
-      <br>
-      <span class="comment"># → vel v0.1.0 running on :3700</span>
-    </div>
-
-    <!-- Agent section (dynamic, filled by config) -->
-    <div class="agent-section hidden" id="agent-section">
-      <div class="agent-avatar" id="agent-emoji"></div>
-      <div class="agent-name" id="agent-name"></div>
-      <div class="agent-role" id="agent-role"></div>
-      <div class="divider"></div>
-      <div class="agent-quote" id="agent-quote"></div>
-      <div class="agent-traits" id="agent-traits"></div>
-    </div>
-
-    <!-- Login -->
+    <!-- Telegram login -->
     <div class="login-section" id="tg-login-area">
-      <div id="tg-login-placeholder" class="tg-login-btn">⏳ Loading Telegram Login...</div>
+      <div id="tg-login-placeholder" class="login-placeholder">⏳ Loading...</div>
     </div>
 
     <!-- Token login (hidden by default) -->
     <div class="login-section hidden" id="token-login-area">
-      <form id="token-login-form" style="display:flex;gap:8px;justify-content:center;align-items:center;">
-        <input type="password" id="token-input" placeholder="Enter access token" style="padding:10px 16px;border-radius:10px;border:1px solid var(--card-border);background:var(--card);color:var(--text);font-size:0.9rem;width:220px;outline:none;" />
-        <button type="submit" style="padding:10px 20px;border-radius:10px;border:none;background:var(--accent);color:#fff;font-weight:600;cursor:pointer;font-size:0.9rem;">Login</button>
+      <form class="token-form" id="token-login-form">
+        <input type="password" id="token-input" placeholder="Access token" />
+        <button type="submit">Login</button>
       </form>
-      <div id="token-error" style="color:#ff4444;font-size:0.8rem;margin-top:8px;" class="hidden"></div>
+      <div id="token-error" class="token-error hidden"></div>
     </div>
 
-    <!-- Telegram link (if configured) -->
+    <!-- Telegram link -->
     <a class="cta-link hidden" id="tg-link" href="#">
       💬 <span id="tg-link-text">Open in Telegram</span>
     </a>
 
-    <!-- Status -->
     <div class="footer">
-      <span class="status-dot"></span> <span id="status-text">ONLINE</span>
-      <br><br>
       powered by <a href="https://github.com/essdee/vel">vel</a>
     </div>
   </div>
 
   <script>
-    // Auto-redirect Mini App users to dashboard
+    // Mini App auto-redirect
     if (window.Telegram?.WebApp?.initData) {
       fetch('/api/auth', {
         method: 'POST',
@@ -463,47 +216,31 @@
       }).catch(() => {});
     }
 
-    // Dev mode: auto-login via /auth/dev
+    // Dev mode
     fetch('/api/mode').then(r => r.json()).then(m => {
       if (m.testMode) window.location.href = '/auth/dev';
     }).catch(() => {});
 
-    // Load config and personalize
+    // Load config
     fetch('/api/config').then(r => r.json()).then(cfg => {
-      // Apply accent color
-      const accent = cfg.accent || '#ff6b35';
-      document.documentElement.style.setProperty('--accent', accent);
-      document.documentElement.style.setProperty('--accent-dim', accent + '1a');
-      document.documentElement.style.setProperty('--accent-glow', accent + '40');
-      document.documentElement.style.setProperty('--card-border', accent + '14');
-
-      // Agent section
-      if (cfg.name) {
-        const section = document.getElementById('agent-section');
-        section.classList.remove('hidden');
-        document.getElementById('agent-emoji').textContent = cfg.emoji || '🤖';
-        document.getElementById('agent-name').textContent = cfg.name;
-        document.getElementById('agent-role').textContent = cfg.role || 'AI Agent';
-        document.title = `${cfg.name} ${cfg.emoji || ''}`;
-
-        if (cfg.quote) {
-          document.getElementById('agent-quote').textContent = `"${cfg.quote}"`;
-        }
-        if (cfg.traits) {
-          document.getElementById('agent-traits').innerHTML = cfg.traits
-            .map(t => `<span class="trait">${t}</span>`).join('');
-        }
+      // Accent color
+      if (cfg.accent) {
+        document.documentElement.style.setProperty('--accent', cfg.accent);
       }
 
-      // Auth mode handling
+      // Title
+      if (cfg.name) {
+        document.getElementById('title').textContent = cfg.name;
+        document.title = cfg.name + (cfg.emoji ? ' ' + cfg.emoji : '');
+      }
+
+      // Auth mode
       const authMode = cfg.authMode || 'telegram';
 
       if (authMode === 'none') {
-        // No login needed, redirect to dashboard
         document.getElementById('tg-login-placeholder').textContent = '';
         window.location.href = '/dashboard';
       } else if (authMode === 'token') {
-        // Show token login form
         document.getElementById('tg-login-area').classList.add('hidden');
         document.getElementById('token-login-area').classList.remove('hidden');
         document.getElementById('token-login-form').addEventListener('submit', function(e) {
@@ -559,7 +296,7 @@
         link.classList.remove('hidden');
         link.href = cfg.telegramLink;
         if (cfg.name) {
-          document.getElementById('tg-link-text').textContent = `Talk to ${cfg.name} on Telegram`;
+          document.getElementById('tg-link-text').textContent = 'Talk to ' + cfg.name + ' on Telegram';
         }
       }
     }).catch(() => {
