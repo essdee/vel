@@ -20,6 +20,7 @@ import (
 	"vel/internal/datasource"
 	"vel/internal/hooks"
 	"vel/internal/panels"
+	vel "vel/pkg/vel"
 )
 
 type Config struct {
@@ -90,6 +91,23 @@ func NewServer(cfg *Config) http.Handler {
 	mux := http.NewServeMux()
 	apiLimiter := newRateLimiter(1000, 15*time.Minute, false)
 	authLimiter := newRateLimiter(10, 15*time.Minute, true)
+
+	// Register app server routes (from init() registrations)
+	for _, reg := range vel.GetRegistrations() {
+		appDir := ""
+		for _, a := range cfg.Apps {
+			if a.Name == reg.Name {
+				appDir = a.Dir
+				break
+			}
+		}
+		reg.Register(mux, vel.AppConfig{
+			Name:      reg.Name,
+			Dir:       appDir,
+			Workspace: cfg.Workspace,
+		})
+		fmt.Printf("[Server] Registered app routes: %s\n", reg.Name)
+	}
 
 	// Pages — check if any app provides a landing page
 	landingFile := filepath.Join(cfg.RootDir, "core", "public", "landing.html")
