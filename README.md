@@ -55,7 +55,7 @@ Vel enforces this through compile-time capability checks, manifest-driven valida
 | App | What it does |
 |-----|-------------|
 | [Velboard](https://github.com/karthikeyan5/velboard) | The dashboard that builds itself. 9 live monitoring panels — and your agent builds the next ones. |
-| [VelBrowser](https://github.com/karthikeyan5/velbrowser) | Your agent can use your browser. Pair with a code, watch it work. No passwords shared. |
+| [VelBridge](https://github.com/karthikeyan5/velbridge) | Your agent can use your browser. Pair with a code, watch it work. No passwords shared. |
 
 These apps don't fork Vel. They don't conflict with each other. They compose. That's the point.
 

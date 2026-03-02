@@ -44,7 +44,7 @@ cd <install-dir>
 go build -o vel .
 ```
 
-> **Note:** If you install apps with server-side Go code (e.g., VelBrowser), you must rebuild using `go run . build` instead of `go build`. See Step 4.
+> **Note:** If you install apps with server-side Go code (e.g., VelBridge), you must rebuild using `go run . build` instead of `go build`. See Step 4.
 
 ---
 
@@ -100,8 +100,8 @@ cd <install-dir>/apps/
 # Example: install Velboard (monitoring panels)
 git clone https://github.com/karthikeyan5/velboard.git
 
-# Example: install VelBrowser (browser relay)
-git clone https://github.com/karthikeyan5/velbrowser.git
+# Example: install VelBridge (browser relay)
+git clone https://github.com/karthikeyan5/velbridge.git
 ```
 
 After adding apps, rebuild to include their server-side code:
@@ -299,7 +299,7 @@ curl -s -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setChatMenuButton" \
 │   └── server/          # HTTP server
 ├── apps/                # Installed apps (each with app.json)
 │   ├── velboard/        # Monitoring panels
-│   └── velbrowser/        # Browser relay
+│   └── velbridge/        # Browser relay
 └── custom/              # Custom static pages
 ```
 

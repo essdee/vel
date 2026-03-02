@@ -1,0 +1,15 @@
+{
+  "name": "velreach",
+  "version": "1.0.0",
+  "title": "VelReach",
+  "description": "Browser relay for OpenClaw agents",
+  "panels": "panels",
+  "server": {
+    "package": "server"
+  },
+  "capabilities": {
+    "net": {},
+    "log": {},
+    "github.com/gorilla/websocket": {}
+  }
+}
