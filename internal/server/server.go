@@ -262,7 +262,8 @@ func NewServer(cfg *Config) http.Handler {
 				Name:     "tg_user",
 				Value:    signed,
 				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
+				Secure:   true,
+				SameSite: http.SameSiteNoneMode,
 				MaxAge:   7 * 24 * 60 * 60,
 				Path:     "/",
 			})
@@ -535,6 +536,12 @@ func NewServer(cfg *Config) http.Handler {
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, cfg)
 	})
+
+	// Pre-warm slow caches in background so first client doesn't wait
+	go func() {
+		data.GetSystemStatus()
+		fmt.Println("[Server] Pre-warmed openclaw-status cache")
+	}()
 
 	// Wrap with middleware
 	return applyMiddleware(mux)
