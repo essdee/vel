@@ -5,13 +5,22 @@ config.json
 .env
 .cookie-secret
 
-# Binary
+# Build artifacts
+_build/
 vell
 /vel
+
+# Apps (standalone repos, cloned at install)
+apps/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+node_modules/
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Apps are standalone repos — cloned into apps/ at install time
-apps/
