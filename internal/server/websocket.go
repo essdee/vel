@@ -130,7 +130,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 					case "models":
 						rawData["models"] = json.RawMessage(data.GetAgentInfo(cfg.Workspace))
 					case "openclaw-status":
-						rawData["openclaw-status"] = json.RawMessage(data.GetSystemStatus())
+						if cached := data.GetSystemStatusCached(); cached != nil {
+							rawData["openclaw-status"] = json.RawMessage(cached)
+						}
 					case "_test":
 						rawData["_test"] = map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()}
 					}

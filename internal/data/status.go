@@ -52,6 +52,21 @@ func GetSystemStatus() json.RawMessage {
 	return statusCache
 }
 
+// GetSystemStatusCached returns cached data without blocking.
+// Returns nil if cache is cold or expired — caller should skip the panel.
+func GetSystemStatusCached() json.RawMessage {
+	statusMu.Lock()
+	defer statusMu.Unlock()
+
+	if time.Since(statusCacheAt) < 30*time.Second && statusCache != nil {
+		return statusCache
+	}
+
+	// Trigger async refresh if stale
+	go GetSystemStatus()
+	return nil
+}
+
 func fetchStatus() *OpenclawStatus {
 	cmd := exec.Command("openclaw", "status")
 	out, err := cmd.Output()
