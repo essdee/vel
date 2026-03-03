@@ -40,6 +40,7 @@ func GetAgentInfo(workspace string) json.RawMessage {
 	}
 
 	if agents, ok := cfg["agents"].(map[string]interface{}); ok {
+		// Start with defaults
 		if defaults, ok := agents["defaults"].(map[string]interface{}); ok {
 			if model, ok := defaults["model"].(map[string]interface{}); ok {
 				if p, ok := model["primary"].(string); ok {
@@ -64,6 +65,37 @@ func GetAgentInfo(workspace string) json.RawMessage {
 				}
 				if e, ok := hb["every"].(string); ok {
 					info.HeartbeatInterval = &e
+				}
+			}
+		}
+		// Overlay first agent's overrides (agents.list[0])
+		if list, ok := agents["list"].([]interface{}); ok && len(list) > 0 {
+			if agent, ok := list[0].(map[string]interface{}); ok {
+				if model, ok := agent["model"].(map[string]interface{}); ok {
+					if p, ok := model["primary"].(string); ok {
+						info.Primary = p
+					}
+					if fb, ok := model["fallbacks"].([]interface{}); ok {
+						info.Fallbacks = []string{}
+						for _, f := range fb {
+							if s, ok := f.(string); ok {
+								info.Fallbacks = append(info.Fallbacks, s)
+							}
+						}
+					}
+				}
+				if sa, ok := agent["subagents"].(map[string]interface{}); ok {
+					if m, ok := sa["model"].(string); ok {
+						info.Subagent = &m
+					}
+				}
+				if hb, ok := agent["heartbeat"].(map[string]interface{}); ok {
+					if m, ok := hb["model"].(string); ok {
+						info.Heartbeat = &m
+					}
+					if e, ok := hb["every"].(string); ok {
+						info.HeartbeatInterval = &e
+					}
 				}
 			}
 		}
