@@ -158,15 +158,23 @@ func NewServer(cfg *Config) http.Handler {
 		http.FileServer(http.Dir(vendorDir)).ServeHTTP(w, r)
 	})))
 
-	// App-driven static routes
+	// App-driven routes (static dirs and single pages)
 	for _, app := range cfg.Apps {
 		for urlPrefix, route := range app.Routes {
-			if route.Type != "static" {
-				continue
-			}
 			absDir := filepath.Join(app.Dir, route.Dir)
-			if _, err := os.Stat(absDir); err == nil {
-				mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
+			switch route.Type {
+			case "static":
+				if _, err := os.Stat(absDir); err == nil {
+					mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
+				}
+			case "page":
+				indexFile := filepath.Join(absDir, "index.html")
+				if _, err := os.Stat(indexFile); err == nil {
+					file := indexFile // capture for closure
+					mux.HandleFunc(urlPrefix, func(w http.ResponseWriter, r *http.Request) {
+						http.ServeFile(w, r, file)
+					})
+				}
 			}
 		}
 	}
@@ -420,7 +428,7 @@ func NewServer(cfg *Config) http.Handler {
 			Value:    signed,
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteNoneMode,
 			MaxAge:   7 * 24 * 60 * 60,
 			Path:     "/",
 		})
@@ -457,7 +465,7 @@ func NewServer(cfg *Config) http.Handler {
 			Value:    signed,
 			HttpOnly: true,
 			Secure:   true,
-			SameSite: http.SameSiteLaxMode,
+			SameSite: http.SameSiteNoneMode,
 			MaxAge:   7 * 24 * 60 * 60,
 			Path:     "/",
 		})
@@ -480,7 +488,8 @@ func NewServer(cfg *Config) http.Handler {
 			Name:     "tg_user",
 			Value:    signed,
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
 			MaxAge:   7 * 24 * 60 * 60,
 			Path:     "/",
 		})

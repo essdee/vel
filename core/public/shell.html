@@ -171,7 +171,7 @@
         fetch: async (url, opts) => {
           const fetchOpts = browserMode
             ? { ...opts, credentials: 'same-origin' }
-            : { ...opts, headers: { ...opts?.headers, 'Content-Type': 'application/json' } };
+            : { ...opts, credentials: 'same-origin', headers: { ...opts?.headers, 'Content-Type': 'application/json' } };
           if (!browserMode && initData) {
             fetchOpts.method = fetchOpts.method || 'POST';
             const body = fetchOpts.body ? JSON.parse(fetchOpts.body) : {};
