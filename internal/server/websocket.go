@@ -90,10 +90,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 			defer ticker.Stop()
 
 			sendMetrics := func() {
+				tTotal := time.Now()
+				t0 := time.Now()
 				metrics, err := data.GetSystemMetrics()
 				if err != nil {
 					return
 				}
+				log.Printf("[ws] GetSystemMetrics: %v", time.Since(t0))
 
 				// Build raw data for all known panel IDs (hardcoded sources)
 				rawData := make(map[string]interface{})
@@ -204,6 +207,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 					msg["_sourceStatus"] = cfg.DSManager.GetStatus()
 				}
 
+				log.Printf("[ws] sendMetrics total: %v", time.Since(tTotal))
 				if err := conn.WriteJSON(msg); err != nil {
 					return
 				}
