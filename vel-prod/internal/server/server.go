@@ -668,7 +668,7 @@ func servesPanelData(w http.ResponseWriter, r *http.Request, panelID string, cfg
 	case "models":
 		result = data.GetAgentInfo(cfg.Workspace)
 	case "openclaw-status":
-		result = data.GetSystemStatus()
+		result = data.GetSystemStatusCached()
 	case "_test":
 		result, _ = json.Marshal(map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()})
 	default:
