@@ -430,6 +430,7 @@
           <div class="header-right">
             <div class="live-dot ${connected ? '' : 'offline-dot'}"></div>
             <span class="live-label ${connected ? '' : 'offline-label'}">${connected ? 'LIVE' : 'OFFLINE'}</span>
+            <button onclick=${() => location.reload(true)} style="background:none;border:none;color:var(--text-dim);font-size:16px;cursor:pointer;padding:4px 6px;margin-left:4px;opacity:0.6;transition:opacity 0.2s" onmouseover=${e => e.target.style.opacity='1'} onmouseout=${e => e.target.style.opacity='0.6'} title="Reload dashboard">↻</button>
             ${browserMode && html`<button class="refresh-btn" onclick=${() => location.href = '/auth/logout'}>Logout</button>`}
           </div>
         </div>
