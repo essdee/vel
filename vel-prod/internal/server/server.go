@@ -281,6 +281,7 @@ func NewServer(cfg *Config) http.Handler {
 				return
 			}
 			w.Header().Set("Content-Type", "application/javascript")
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 			http.ServeFile(w, r, uiPath)
 			return
 		}
