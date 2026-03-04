@@ -3,10 +3,13 @@ package verify
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"vel/internal/apps"
 	"vel/internal/panels"
@@ -55,7 +58,10 @@ func RunVerify(cfg VerifyConfig) VerifyResult {
 	// 5. openclaw-cli check
 	checks = append(checks, checkOpenclawCLI())
 
-	// 6. App-registered checks
+	// 6. Telegram Login Widget domain check
+	checks = append(checks, checkTelegramDomain(cfg.RootDir))
+
+	// 7. App-registered checks
 	for _, hc := range vel.GetHealthChecks() {
 		pass, detail := hc.Check()
 		status := "ok"
@@ -247,6 +253,89 @@ func checkPanelData(appList []*apps.App) []CheckResult {
 	}
 
 	return results
+}
+
+// checkTelegramDomain detects Login Widget domain mismatch via oauth.telegram.org.
+func checkTelegramDomain(rootDir string) CheckResult {
+	const name = "auth.telegram_domain"
+
+	// Get bot token (env → .env file)
+	botToken := os.Getenv("BOT_TOKEN")
+	if botToken == "" {
+		if envData, err := os.ReadFile(filepath.Join(rootDir, ".env")); err == nil {
+			for _, line := range strings.Split(string(envData), "\n") {
+				if strings.HasPrefix(line, "BOT_TOKEN=") {
+					botToken = strings.TrimSpace(strings.TrimPrefix(line, "BOT_TOKEN="))
+				}
+			}
+		}
+	}
+	if botToken == "" {
+		return CheckResult{Name: name, Status: "ok", Detail: "skipped (no bot token)"}
+	}
+
+	// Extract bot ID from token (format: BOTID:SECRET)
+	parts := strings.SplitN(botToken, ":", 2)
+	if len(parts) != 2 || parts[0] == "" {
+		return CheckResult{Name: name, Status: "ok", Detail: "skipped (unrecognised token format)"}
+	}
+	botID := parts[0]
+
+	// Get domain from config.json (authUrl or siteUrl)
+	domain := ""
+	configPath := filepath.Join(rootDir, "config.json")
+	if data, err := os.ReadFile(configPath); err == nil {
+		var raw map[string]json.RawMessage
+		if json.Unmarshal(data, &raw) == nil {
+			for _, key := range []string{"authUrl", "siteUrl"} {
+				if v, ok := raw[key]; ok {
+					var s string
+					if json.Unmarshal(v, &s) == nil && s != "" {
+						// Strip path, keep scheme+host
+						s = strings.TrimSpace(s)
+						if idx := strings.Index(s, "://"); idx >= 0 {
+							rest := s[idx+3:] // strip scheme
+							if slash := strings.Index(rest, "/"); slash >= 0 {
+								rest = rest[:slash]
+							}
+							domain = rest
+						}
+						break
+					}
+				}
+			}
+		}
+	}
+	if domain == "" {
+		return CheckResult{Name: name, Status: "ok", Detail: "skipped (no siteUrl/authUrl in config)"}
+	}
+
+	// Call oauth.telegram.org
+	url := fmt.Sprintf("https://oauth.telegram.org/auth?bot_id=%s&origin=https://%s", botID, domain)
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return CheckResult{Name: name, Status: "ok", Detail: "could not verify (network)"}
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if err != nil {
+		return CheckResult{Name: name, Status: "ok", Detail: "could not verify (read error)"}
+	}
+
+	if strings.Contains(string(body), "Bot domain invalid") {
+		return CheckResult{
+			Name:   name,
+			Status: "fail",
+			Detail: fmt.Sprintf(
+				"BotFather Login Widget domain doesn't match config siteUrl. Fix: @BotFather → /mybots → Bot Settings → Domain → set to %s",
+				domain,
+			),
+		}
+	}
+
+	return CheckResult{Name: name, Status: "ok", Detail: fmt.Sprintf("domain %s accepted by Telegram", domain)}
 }
 
 // openclawFallbackPaths returns paths to try when 'openclaw' isn't in PATH.

@@ -150,7 +150,8 @@ func runVerify(_ []string) {
 			panelChecks = append(panelChecks, c)
 		case strings.HasPrefix(c.Name, "data:"):
 			dataChecks = append(dataChecks, c)
-		case c.Name == "config" || c.Name == "auth" || c.Name == "openclaw-cli":
+		case c.Name == "config" || c.Name == "auth" || c.Name == "openclaw-cli" ||
+			strings.HasPrefix(c.Name, "auth."):
 			coreChecks = append(coreChecks, c)
 		default:
 			appChecks = append(appChecks, c)
