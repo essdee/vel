@@ -26,6 +26,7 @@ func setupTestDir(t *testing.T) string {
 	os.MkdirAll(pubDir, 0755)
 	os.WriteFile(filepath.Join(pubDir, "landing.html"), []byte("<html>landing</html>"), 0644)
 	os.WriteFile(filepath.Join(pubDir, "shell.html"), []byte("<html>shell</html>"), 0644)
+	os.WriteFile(filepath.Join(pubDir, "welcome.html"), []byte("<html>welcome</html>"), 0644)
 
 	// Create a test panel
 	cpuDir := filepath.Join(dir, "core", "panels", "cpu")
