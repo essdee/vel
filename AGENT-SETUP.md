@@ -162,6 +162,12 @@ sudo systemctl start vel
 sudo systemctl status vel
 ```
 
+> **⚠️ PATH note:** systemd runs with a minimal PATH that may not include `~/.npm-global/bin`.
+> If the `openclaw-status` panel shows "CLI not found", symlink openclaw to a system path:
+> ```bash
+> sudo ln -sf $(which openclaw) /usr/local/bin/openclaw
+> ```
+
 ---
 
 ## Step 7 — Expose to the internet
@@ -325,6 +331,64 @@ Each app needs an `app.json`:
 
 ---
 
+## Step 9 — Verify
+
+Run the health check to confirm everything is working:
+
+```bash
+./vel verify
+```
+
+Expected output when everything is working:
+
+```
+⚡ Vel Health Check
+
+  ✓ config — config.json valid
+  ✓ auth — bot token configured (.env)
+  ✓ openclaw-cli — found at /home/<user>/.npm-global/bin/openclaw
+
+  Panels:
+  ✓ cpu
+  ✓ memory
+  ...
+
+  Data sources:
+  ✓ velboard:sessions — file exists: ~/.openclaw/workspace/sessions-summary.json
+
+  5 passed, 0 failed
+```
+
+If any checks fail, follow the detail messages to fix them. You can also hit the health API endpoint at any time (no auth required):
+
+```bash
+curl http://localhost:<port>/api/health
+```
+
+---
+
+## Adding Health Checks (for app developers)
+
+Apps can register custom health checks that run during `vel verify` and are included in `/api/health`:
+
+```go
+// In your app's server/init.go or register.go
+func init() {
+    vel.RegisterApp(vel.AppRegistration{...})
+
+    vel.RegisterCheck(vel.HealthCheck{
+        Name: "my-check",
+        Desc: "Description of what this checks",
+        Check: func() (bool, string) {
+            // Return true/false and a human-readable detail message
+            return true, "everything OK"
+        },
+    })
+}
+```
+
+---
+
 ## Troubleshooting
 
 - **"BOT_TOKEN required"** → Set `BOT_TOKEN` in `.env` or environment
@@ -332,3 +396,5 @@ Each app needs an `app.json`:
 - **App not discovered** → Verify `apps/<name>/app.json` exists and is valid JSON
 - **WebSocket disconnects** → Ensure nginx has `Upgrade`/`Connection` proxy headers
 - **Auth fails** → Verify domain matches `authUrl` and BotFather `/setdomain`
+- **openclaw-cli fails in systemd** → Run `sudo ln -sf $(which openclaw) /usr/local/bin/openclaw`
+- **`vel verify` fails** → Read the detail messages; each check explains what's missing

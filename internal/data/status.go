@@ -2,7 +2,9 @@ package data
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,17 +21,8 @@ type OpenclawStatus struct {
 	Memory    string          `json:"memory,omitempty"`
 	Security  *SecurityStatus `json:"security,omitempty"`
 	Error     string          `json:"error,omitempty"`
-	Update    string          `json:"update,omitempty"`
-	Gateway   string          `json:"gateway,omitempty"`
-	ActiveSessions []SessionInfo `json:"activeSessions,omitempty"`
-}
-
-type SessionInfo struct {
-	Key     string `json:"key"`
-	Kind    string `json:"kind"`
-	Age     string `json:"age"`
-	Model   string `json:"model"`
-	Context string `json:"context"`
+	Update  string `json:"update,omitempty"`
+	Gateway string `json:"gateway,omitempty"`
 }
 
 type ChannelStatus struct {
@@ -37,10 +30,18 @@ type ChannelStatus struct {
 	Status string `json:"status"`
 }
 
+type SecurityWarning struct {
+	Level   string `json:"level"`
+	Title   string `json:"title"`
+	Detail  string `json:"detail,omitempty"`
+	Fix     string `json:"fix,omitempty"`
+}
+
 type SecurityStatus struct {
-	Critical int `json:"critical"`
-	Warn     int `json:"warn"`
-	Info     int `json:"info"`
+	Critical int               `json:"critical"`
+	Warn     int               `json:"warn"`
+	Info     int               `json:"info"`
+	Items    []SecurityWarning `json:"items,omitempty"`
 }
 
 var (
@@ -79,8 +80,45 @@ func GetSystemStatusCached() json.RawMessage {
 	return nil
 }
 
+// findOpenclawBinary finds the openclaw binary, trying fallback paths if needed.
+func findOpenclawBinary() string {
+	// Try PATH first
+	if path, err := exec.LookPath("openclaw"); err == nil {
+		return path
+	}
+
+	// Try which
+	if out, err := exec.Command("which", "openclaw").Output(); err == nil {
+		path := strings.TrimSpace(string(out))
+		if path != "" {
+			if _, err := os.Stat(path); err == nil {
+				return path
+			}
+		}
+	}
+
+	// Try fallback paths
+	home, _ := os.UserHomeDir()
+	fallbacks := []string{
+		filepath.Join(home, ".npm-global", "bin", "openclaw"),
+		"/usr/local/bin/openclaw",
+		"/usr/bin/openclaw",
+	}
+	for _, path := range fallbacks {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return ""
+}
+
 func fetchStatus() *OpenclawStatus {
-	cmd := exec.Command("openclaw", "status")
+	binary := findOpenclawBinary()
+	if binary == "" {
+		return &OpenclawStatus{Online: false, Error: "CLI not found or failed"}
+	}
+	cmd := exec.Command(binary, "status")
 	out, err := cmd.Output()
 	if err != nil {
 		return &OpenclawStatus{Online: false, Error: "CLI not found or failed"}
@@ -121,6 +159,57 @@ func fetchStatus() *OpenclawStatus {
 		w, _ := strconv.Atoi(m[2])
 		i, _ := strconv.Atoi(m[3])
 		security = &SecurityStatus{Critical: c, Warn: w, Info: i}
+
+		// Parse individual security items
+		// Format: "  WARN|CRITICAL|INFO\n  key Title text\n    detail\n    Fix: fix text"
+		itemRe := regexp.MustCompile(`(?m)^(WARN|CRITICAL|INFO)\n`)
+		titleRe := regexp.MustCompile(`(?m)^\S+\s+(.+)$`)
+		fixRe := regexp.MustCompile(`(?m)^\s+Fix:\s+(.+)$`)
+
+		// Split by WARN/CRITICAL/INFO section headers
+		sections := regexp.MustCompile(`(?m)^(WARN|CRITICAL|INFO)\s*$`).Split(raw, -1)
+		levels := itemRe.FindAllStringSubmatch(raw, -1)
+
+		for i, section := range sections[1:] { // skip before first header
+			if i >= len(levels) {
+				break
+			}
+			level := strings.ToLower(levels[i][1])
+
+			// Each section can have multiple items separated by entries starting with non-whitespace
+			entryRe := regexp.MustCompile(`(?m)^(\S+\.\S+)\s+(.+)`)
+			entries := entryRe.FindAllStringSubmatchIndex(section, -1)
+
+			for j, loc := range entries {
+				end := len(section)
+				if j+1 < len(entries) {
+					end = entries[j+1][0]
+				}
+				block := section[loc[0]:end]
+				title := section[loc[4]:loc[5]]
+
+				detail := ""
+				fix := ""
+				lines := strings.Split(block, "\n")
+				for _, l := range lines[1:] {
+					trimmed := strings.TrimSpace(l)
+					if strings.HasPrefix(trimmed, "Fix:") {
+						fix = strings.TrimSpace(strings.TrimPrefix(trimmed, "Fix:"))
+					} else if trimmed != "" && detail == "" {
+						detail = trimmed
+					}
+				}
+
+				_ = titleRe
+				_ = fixRe
+				security.Items = append(security.Items, SecurityWarning{
+					Level:  level,
+					Title:  title,
+					Detail: detail,
+					Fix:    fix,
+				})
+			}
+		}
 	}
 
 	// Parse update availability
@@ -149,42 +238,15 @@ func fetchStatus() *OpenclawStatus {
 		gateway = "stopped"
 	}
 
-	// Parse active sessions with context usage
-	var activeSessions []SessionInfo
-	sessRe := regexp.MustCompile(`│\s*(agent:\S+)\s*│\s*(\w+)\s*│\s*(.+?)\s*│\s*(\S+)\s*│\s*(\S+/\S+\s*\(\d+%\))\s*│`)
-	for _, m := range sessRe.FindAllStringSubmatch(raw, -1) {
-		age := strings.TrimSpace(m[3])
-		key := strings.TrimSpace(m[1])
-		// Skip old sessions and limit to recent ones
-		if !strings.Contains(age, "just now") && !strings.Contains(age, "m ago") {
-			continue
-		}
-		// Skip cron sessions — they're noise
-		if strings.Contains(key, ":cron:") {
-			continue
-		}
-		activeSessions = append(activeSessions, SessionInfo{
-			Key:     key,
-			Kind:    m[2],
-			Age:     age,
-			Model:   strings.Replace(m[4], "claude-", "", 1),
-			Context: m[5],
-		})
-		if len(activeSessions) >= 4 {
-			break
-		}
-	}
-
 	s := &OpenclawStatus{
-		Online:         true,
-		Version:        version,
-		Heartbeat:      get("Heartbeat"),
-		Sessions:       get("Sessions"),
-		Memory:         get("Memory"),
-		Security:       security,
-		Update:         update,
-		Gateway:        gateway,
-		ActiveSessions: activeSessions,
+		Online:    true,
+		Version:   version,
+		Heartbeat: get("Heartbeat"),
+		Sessions:  get("Sessions"),
+		Memory:    get("Memory"),
+		Security:  security,
+		Update:    update,
+		Gateway:   gateway,
 	}
 	if channel != nil {
 		s.Channel = channel

@@ -33,8 +33,10 @@ type App struct {
 }
 
 type Route struct {
-	Type string `json:"type"`
-	Dir  string `json:"dir"`
+	Type   string `json:"type"`
+	Dir    string `json:"dir"`
+	Target string `json:"target"` // for proxy type: e.g. "http://localhost:3800"
+	Cache  string `json:"cache"`  // "none" | "aggressive" | "" (default: no-cache for page, 1hr for static)
 }
 
 type FileDataSource struct {

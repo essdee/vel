@@ -20,6 +20,7 @@ import (
 	"vel/internal/hooks"
 	"vel/internal/panels"
 	"vel/internal/server"
+	"vel/internal/verify"
 )
 
 const Version = "0.1.0"
@@ -81,6 +82,8 @@ func main() {
 		runBuild(os.Args[2:])
 	case "caps":
 		runCaps(os.Args[2:])
+	case "verify":
+		runVerify(os.Args[2:])
 	case "version":
 		fmt.Printf("vel %s\n", Version)
 	case "help", "--help", "-h":
@@ -107,10 +110,106 @@ Commands:
   start     Start the server (default if no command given)
   build     Scan apps, check capabilities, compile binary
   caps      List or export app capabilities
+  verify    Run health checks on the current installation
   version   Print version
   help      Show this help
 
 Run 'vel <command> --help' for command-specific flags.`)
+}
+
+func runVerify(_ []string) {
+	rootDir, _ := os.Getwd()
+
+	fmt.Print("\n⚡ Vel Health Check\n\n")
+
+	// Discover apps
+	discoveredApps, _ := apps.Discover(rootDir)
+
+	// Build panel app list
+	var panelApps []panels.AppInfo
+	for _, a := range discoveredApps {
+		panelApps = append(panelApps, panels.AppInfo{Name: a.Name, Panels: a.Panels, Dir: a.Dir})
+	}
+
+	// Discover panels
+	registry, _ := panels.DiscoverPanels(rootDir, panelApps)
+
+	cfg := verify.VerifyConfig{
+		RootDir:  rootDir,
+		Apps:     discoveredApps,
+		Registry: registry,
+	}
+
+	result := verify.RunVerify(cfg)
+
+	// Print grouped output
+	var panelChecks, dataChecks, appChecks, coreChecks []verify.CheckResult
+	for _, c := range result.Checks {
+		switch {
+		case strings.HasPrefix(c.Name, "panel:"):
+			panelChecks = append(panelChecks, c)
+		case strings.HasPrefix(c.Name, "data:"):
+			dataChecks = append(dataChecks, c)
+		case c.Name == "config" || c.Name == "auth" || c.Name == "openclaw-cli" ||
+			strings.HasPrefix(c.Name, "auth."):
+			coreChecks = append(coreChecks, c)
+		default:
+			appChecks = append(appChecks, c)
+		}
+	}
+
+	printCheck := func(c verify.CheckResult) {
+		label := c.Name
+		// Strip prefixes for display
+		label = strings.TrimPrefix(label, "panel:")
+		label = strings.TrimPrefix(label, "data:")
+
+		var detail string
+		if c.Detail != "" {
+			detail = " — " + c.Detail
+		}
+
+		if c.Status == "ok" {
+			fmt.Printf("  ✓ %s%s\n", label, detail)
+		} else {
+			fmt.Printf("  ✗ %s%s\n", label, detail)
+		}
+	}
+
+	// Core checks
+	for _, c := range coreChecks {
+		printCheck(c)
+	}
+
+	// Panels
+	if len(panelChecks) > 0 {
+		fmt.Println("\n  Panels:")
+		for _, c := range panelChecks {
+			printCheck(c)
+		}
+	}
+
+	// Data sources
+	if len(dataChecks) > 0 {
+		fmt.Println("\n  Data sources:")
+		for _, c := range dataChecks {
+			printCheck(c)
+		}
+	}
+
+	// App checks
+	if len(appChecks) > 0 {
+		fmt.Println("\n  App checks:")
+		for _, c := range appChecks {
+			printCheck(c)
+		}
+	}
+
+	fmt.Printf("\n  %d passed, %d failed\n\n", result.Passed, result.Failed)
+
+	if result.Failed > 0 {
+		os.Exit(1)
+	}
 }
 
 func runBuild(args []string) {

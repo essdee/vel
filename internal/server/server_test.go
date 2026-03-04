@@ -26,6 +26,7 @@ func setupTestDir(t *testing.T) string {
 	os.MkdirAll(pubDir, 0755)
 	os.WriteFile(filepath.Join(pubDir, "landing.html"), []byte("<html>landing</html>"), 0644)
 	os.WriteFile(filepath.Join(pubDir, "shell.html"), []byte("<html>shell</html>"), 0644)
+	os.WriteFile(filepath.Join(pubDir, "welcome.html"), []byte("<html>welcome</html>"), 0644)
 
 	// Create a test panel
 	cpuDir := filepath.Join(dir, "core", "panels", "cpu")
@@ -36,6 +37,11 @@ func setupTestDir(t *testing.T) string {
 
 	// Create vendor dir
 	os.MkdirAll(filepath.Join(dir, "core", "vendor"), 0755)
+
+	// Create minimal config.json and .env so health checks pass
+	config := `{"authUrl":"https://example.com/auth","auth":{"allowedTelegramUsers":[123]}}`
+	os.WriteFile(filepath.Join(dir, "config.json"), []byte(config), 0644)
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("BOT_TOKEN=test-bot-token"), 0644)
 
 	return dir
 }

@@ -20,6 +20,7 @@ import (
 	"vel/internal/datasource"
 	"vel/internal/hooks"
 	"vel/internal/panels"
+	"vel/internal/verify"
 	vel "vel/pkg/vel"
 )
 
@@ -87,10 +88,57 @@ func getClientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
+// healthCacher is a per-server health result cache (60s TTL).
+type healthCacher struct {
+	mu     sync.Mutex
+	result json.RawMessage
+	at     time.Time
+}
+
+func newHealthCacher() *healthCacher { return &healthCacher{} }
+
+func (hc *healthCacher) get(cfg *Config) json.RawMessage {
+	hc.mu.Lock()
+	defer hc.mu.Unlock()
+
+	if time.Since(hc.at) < 60*time.Second && hc.result != nil {
+		return hc.result
+	}
+
+	vcfg := verify.VerifyConfig{
+		RootDir:  cfg.RootDir,
+		Apps:     cfg.Apps,
+		Registry: cfg.Registry,
+	}
+	result := verify.RunVerify(vcfg)
+
+	type healthResponse struct {
+		Status    string               `json:"status"`
+		Version   string               `json:"version"`
+		Timestamp string               `json:"timestamp"`
+		Checks    []verify.CheckResult `json:"checks"`
+		Passed    int                  `json:"passed"`
+		Failed    int                  `json:"failed"`
+	}
+	resp := healthResponse{
+		Status:    result.Status,
+		Version:   cfg.Version,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		Checks:    result.Checks,
+		Passed:    result.Passed,
+		Failed:    result.Failed,
+	}
+	data, _ := json.Marshal(resp)
+	hc.result = data
+	hc.at = time.Now()
+	return hc.result
+}
+
 func NewServer(cfg *Config) http.Handler {
 	mux := http.NewServeMux()
 	apiLimiter := newRateLimiter(1000, 15*time.Minute, false)
 	authLimiter := newRateLimiter(10, 15*time.Minute, true)
+	hcacher := newHealthCacher()
 
 	// Register app server routes (from init() registrations)
 	for _, reg := range vel.GetRegistrations() {
@@ -165,13 +213,81 @@ func NewServer(cfg *Config) http.Handler {
 			switch route.Type {
 			case "static":
 				if _, err := os.Stat(absDir); err == nil {
-					mux.Handle(urlPrefix, http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir))))
+					fs := http.StripPrefix(urlPrefix, http.FileServer(http.Dir(absDir)))
+					cacheMode := route.Cache // capture for closure
+					mux.Handle(urlPrefix, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						switch cacheMode {
+						case "none":
+							w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+							w.Header().Set("Pragma", "no-cache")
+						case "aggressive":
+							w.Header().Set("Cache-Control", "public, max-age=86400")
+						default:
+							w.Header().Set("Cache-Control", "public, max-age=3600")
+						}
+						fs.ServeHTTP(w, r)
+					}))
+				}
+			case "proxy":
+				if route.Target != "" {
+					target := route.Target
+					prefix := urlPrefix
+					mux.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
+						proxyURL := target + strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(prefix, "/"))
+						if r.URL.RawQuery != "" {
+							proxyURL += "?" + r.URL.RawQuery
+						}
+						proxyReq, err := http.NewRequest(r.Method, proxyURL, r.Body)
+						if err != nil {
+							http.Error(w, "Bad gateway", 502)
+							return
+						}
+						for k, vv := range r.Header {
+							for _, v := range vv {
+								proxyReq.Header.Add(k, v)
+							}
+						}
+						resp, err := http.DefaultClient.Do(proxyReq)
+						if err != nil {
+							http.Error(w, "Bad gateway", 502)
+							return
+						}
+						defer resp.Body.Close()
+						for k, vv := range resp.Header {
+							for _, v := range vv {
+								w.Header().Add(k, v)
+							}
+						}
+						w.WriteHeader(resp.StatusCode)
+						buf := make([]byte, 32*1024)
+						for {
+							n, readErr := resp.Body.Read(buf)
+							if n > 0 {
+								w.Write(buf[:n])
+							}
+							if readErr != nil {
+								break
+							}
+						}
+					})
+					fmt.Printf("[Server] Proxy route: %s → %s\n", prefix, target)
 				}
 			case "page":
 				indexFile := filepath.Join(absDir, "index.html")
 				if _, err := os.Stat(indexFile); err == nil {
-					file := indexFile // capture for closure
+					file := indexFile   // capture for closure
+					cacheMode := route.Cache // capture for closure
 					mux.HandleFunc(urlPrefix, func(w http.ResponseWriter, r *http.Request) {
+						switch cacheMode {
+						case "aggressive":
+							w.Header().Set("Cache-Control", "public, max-age=86400")
+						case "none":
+							w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+							w.Header().Set("Pragma", "no-cache")
+						default:
+							w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+							w.Header().Set("Pragma", "no-cache")
+						}
 						http.ServeFile(w, r, file)
 					})
 				}
@@ -213,6 +329,7 @@ func NewServer(cfg *Config) http.Handler {
 				return
 			}
 			w.Header().Set("Content-Type", "application/javascript")
+			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
 			http.ServeFile(w, r, uiPath)
 			return
 		}
@@ -305,12 +422,11 @@ func NewServer(cfg *Config) http.Handler {
 		writeJSON(w, map[string]interface{}{"testMode": auth.IsTestMode()})
 	})
 
+	// /api/health — no auth required; results cached 60s
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]interface{}{
-			"status":    "ok",
-			"timestamp": time.Now().UTC().Format(time.RFC3339),
-			"version":   cfg.Version,
-		})
+		result := hcacher.get(cfg)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(result)
 	})
 
 	mux.HandleFunc("/api/usage/refresh", func(w http.ResponseWriter, r *http.Request) {
@@ -541,6 +657,57 @@ func NewServer(cfg *Config) http.Handler {
 		writeJSON(w, state)
 	})
 
+	// Updates API
+	mux.HandleFunc("/api/updates/check", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" && r.Method != "POST" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		user := auth.Check(r)
+		if user == nil {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+		// Force a fresh check
+		data.InvalidateUpdatesCache()
+		result := data.GetUpdatesStatus(cfg.RootDir)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(result)
+	})
+
+	mux.HandleFunc("/api/updates/apply", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		user := auth.Check(r)
+		if user == nil {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+		deployScript := filepath.Join(cfg.RootDir, "deploy.sh")
+		if _, err := os.Stat(deployScript); err != nil {
+			w.WriteHeader(500)
+			writeJSON(w, map[string]interface{}{"error": "deploy.sh not found"})
+			return
+		}
+		// Invalidate cache so next check reflects post-deploy state
+		data.InvalidateUpdatesCache()
+		// Run deploy in background — script restarts the service so this process will die
+		cmd := exec.Command("bash", deployScript)
+		cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"))
+		if err := cmd.Start(); err != nil {
+			w.WriteHeader(500)
+			writeJSON(w, map[string]interface{}{"error": "Failed to start deploy: " + err.Error()})
+			return
+		}
+		// Detach — deploy.sh will restart the service
+		go cmd.Wait()
+		writeJSON(w, map[string]interface{}{"ok": true, "message": "Deploy started. Dashboard will restart shortly."})
+	})
+
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, cfg)
@@ -600,7 +767,9 @@ func servesPanelData(w http.ResponseWriter, r *http.Request, panelID string, cfg
 	case "models":
 		result = data.GetAgentInfo(cfg.Workspace)
 	case "openclaw-status":
-		result = data.GetSystemStatus()
+		result = data.GetSystemStatusCached()
+	case "updates":
+		result = data.GetUpdatesStatus(cfg.RootDir)
 	case "_test":
 		result, _ = json.Marshal(map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()})
 	default:
