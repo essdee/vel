@@ -2,7 +2,9 @@ package data
 
 import (
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -78,8 +80,45 @@ func GetSystemStatusCached() json.RawMessage {
 	return nil
 }
 
+// findOpenclawBinary finds the openclaw binary, trying fallback paths if needed.
+func findOpenclawBinary() string {
+	// Try PATH first
+	if path, err := exec.LookPath("openclaw"); err == nil {
+		return path
+	}
+
+	// Try which
+	if out, err := exec.Command("which", "openclaw").Output(); err == nil {
+		path := strings.TrimSpace(string(out))
+		if path != "" {
+			if _, err := os.Stat(path); err == nil {
+				return path
+			}
+		}
+	}
+
+	// Try fallback paths
+	home, _ := os.UserHomeDir()
+	fallbacks := []string{
+		filepath.Join(home, ".npm-global", "bin", "openclaw"),
+		"/usr/local/bin/openclaw",
+		"/usr/bin/openclaw",
+	}
+	for _, path := range fallbacks {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+
+	return ""
+}
+
 func fetchStatus() *OpenclawStatus {
-	cmd := exec.Command("openclaw", "status")
+	binary := findOpenclawBinary()
+	if binary == "" {
+		return &OpenclawStatus{Online: false, Error: "CLI not found or failed"}
+	}
+	cmd := exec.Command(binary, "status")
 	out, err := cmd.Output()
 	if err != nil {
 		return &OpenclawStatus{Online: false, Error: "CLI not found or failed"}
