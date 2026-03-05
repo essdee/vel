@@ -33,15 +33,13 @@ var Tier1Packages = map[string]bool{
 	"vel/pkg/vel": true,
 }
 
-// BlacklistedPackages are never allowed.
+// BlacklistedPackages are never allowed (unless unlocked by a capability).
 var BlacklistedPackages = map[string]bool{
-	"os/exec":       true,
 	"syscall":       true,
 	"unsafe":        true,
 	"plugin":        true,
 	"reflect":       true,
 	"runtime/debug": true,
-	"os":            true,
 }
 
 // BlacklistedFunctions in otherwise-available packages.
@@ -58,6 +56,7 @@ var Tier2Categories = map[string][]string{
 	"write": {"os"},
 	"net":   {"net/http", "net/url"},
 	"env":   {"os"},
+	"exec":  {"os/exec"},
 	"db":    {"database/sql"},
 }
 
