@@ -41,7 +41,6 @@ var BlacklistedPackages = map[string]bool{
 	"plugin":        true,
 	"reflect":       true,
 	"runtime/debug": true,
-	"os":            true,
 }
 
 // BlacklistedFunctions in otherwise-available packages.
