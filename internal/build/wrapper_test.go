@@ -53,7 +53,7 @@ func TestGenerateWrappersSkipsBlacklistedPackages(t *testing.T) {
 	buildDir := t.TempDir()
 
 	tier2 := map[string]bool{
-		"syscall": true, // fully blacklisted
+		"os/exec": true, // fully blacklisted
 		"net/url": true,
 	}
 
@@ -62,27 +62,10 @@ func TestGenerateWrappersSkipsBlacklistedPackages(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, ok := rewriteMap["syscall"]; ok {
-		t.Error("should not generate wrapper for blacklisted package syscall")
+	if _, ok := rewriteMap["os/exec"]; ok {
+		t.Error("should not generate wrapper for blacklisted package os/exec")
 	}
 	if _, ok := rewriteMap["net/url"]; !ok {
 		t.Error("should generate wrapper for net/url")
-	}
-}
-
-func TestGenerateWrappersAllowsExecWithCapability(t *testing.T) {
-	buildDir := t.TempDir()
-
-	tier2 := map[string]bool{
-		"os/exec": true, // now tier 2, not blacklisted
-	}
-
-	rewriteMap, err := GenerateWrappers(buildDir, tier2)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, ok := rewriteMap["os/exec"]; !ok {
-		t.Error("should generate wrapper for os/exec (tier 2 with exec capability)")
 	}
 }

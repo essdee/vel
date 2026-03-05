@@ -14,15 +14,9 @@ func TestTier1Allowed(t *testing.T) {
 }
 
 func TestBlacklistedPackages(t *testing.T) {
-	for _, pkg := range []string{"syscall", "unsafe", "plugin", "reflect"} {
+	for _, pkg := range []string{"os/exec", "syscall", "unsafe", "plugin", "reflect", "os"} {
 		if !BlacklistedPackages[pkg] {
 			t.Errorf("expected %q in BlacklistedPackages", pkg)
-		}
-	}
-	// os and os/exec are now capability-gated (tier 2), not blacklisted
-	for _, pkg := range []string{"os", "os/exec"} {
-		if BlacklistedPackages[pkg] {
-			t.Errorf("%q should NOT be in BlacklistedPackages (now tier 2)", pkg)
 		}
 	}
 }
