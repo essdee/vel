@@ -197,7 +197,16 @@ func NewServer(cfg *Config) http.Handler {
 
 	// Static files
 	publicDir := filepath.Join(cfg.RootDir, "core", "public")
-	mux.Handle("/public/", http.StripPrefix("/public/", cacheHandler(http.FileServer(http.Dir(publicDir)), "3600")))
+	mux.Handle("/public/", http.StripPrefix("/public/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Service worker must never be cached — browser needs to always check for updates
+		if strings.HasSuffix(r.URL.Path, "sw.js") {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+			w.Header().Set("Pragma", "no-cache")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		}
+		http.FileServer(http.Dir(publicDir)).ServeHTTP(w, r)
+	})))
 
 	vendorDir := filepath.Join(cfg.RootDir, "core", "vendor")
 	mux.Handle("/core/vendor/", http.StripPrefix("/core/vendor/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

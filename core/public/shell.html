@@ -125,9 +125,15 @@
     // ── Auth ──
     async function checkAuth() {
       try {
-        const opts = browserMode
-          ? { credentials: 'same-origin' }
-          : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData }) };
+        let opts;
+        if (browserMode) {
+          opts = { credentials: 'same-origin', headers: {} };
+          // Token auth: pass ?token= as Bearer header
+          const urlToken = new URLSearchParams(window.location.search).get('token');
+          if (urlToken) opts.headers['Authorization'] = 'Bearer ' + urlToken;
+        } else {
+          opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData }) };
+        }
         const res = await fetch('/api/auth', opts);
         if (!res.ok) { window.location.href = '/'; return null; }
         return await res.json();
@@ -171,8 +177,11 @@
       const api = useMemo(() => ({
         fetch: async (url, opts) => {
           const fetchOpts = browserMode
-            ? { ...opts, credentials: 'same-origin' }
+            ? { ...opts, credentials: 'same-origin', headers: { ...opts?.headers } }
             : { ...opts, credentials: 'same-origin', headers: { ...opts?.headers, 'Content-Type': 'application/json' } };
+          // Token auth: pass ?token= as Bearer header for API calls
+          const urlTk = new URLSearchParams(window.location.search).get('token');
+          if (urlTk) fetchOpts.headers = { ...fetchOpts.headers, 'Authorization': 'Bearer ' + urlTk };
           if (!browserMode && initData) {
             fetchOpts.method = fetchOpts.method || 'POST';
             const body = fetchOpts.body ? JSON.parse(fetchOpts.body) : {};
@@ -314,7 +323,10 @@
             if (initData) {
               ws.send(JSON.stringify({ type: 'auth', initData }));
             } else {
-              fetch('/api/auth', { credentials: 'same-origin' })
+              const fetchOpts = { credentials: 'same-origin', headers: {} };
+              const urlTok = new URLSearchParams(window.location.search).get('token');
+              if (urlTok) fetchOpts.headers['Authorization'] = 'Bearer ' + urlTok;
+              fetch('/api/auth', fetchOpts)
                 .then(r => r.json())
                 .then(data => {
                   if (data.ok) ws.send(JSON.stringify({ type: 'auth', cookieAuth: true, user: data.user }));
@@ -464,9 +476,25 @@
     }
 
     // Register service worker (browser only, not Mini App)
+    // Force update check on every page load to bust stale caches
     const isMiniApp = !!(tg && tg.initData);
     if (!isMiniApp && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/public/sw.js').catch(() => {});
+      navigator.serviceWorker.register('/public/sw.js').then(reg => {
+        // Check for updates immediately
+        reg.update().catch(() => {});
+        // When a new SW is found and waiting, activate it immediately
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (newWorker) {
+            newWorker.addEventListener('statechange', () => {
+              if (newWorker.state === 'activated') {
+                // New SW active — reload to get fresh content
+                window.location.reload();
+              }
+            });
+          }
+        });
+      }).catch(() => {});
     }
 
     // Mount
