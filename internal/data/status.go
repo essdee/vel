@@ -48,25 +48,39 @@ var (
 	statusCache   json.RawMessage
 	statusCacheAt time.Time
 	statusMu      sync.Mutex
+	statusRunning bool
 )
 
 func GetSystemStatus() json.RawMessage {
 	statusMu.Lock()
-	defer statusMu.Unlock()
-
 	if time.Since(statusCacheAt) < 30*time.Second && statusCache != nil {
-		return statusCache
+		cached := statusCache
+		statusMu.Unlock()
+		return cached
 	}
+	if statusRunning {
+		cached := statusCache
+		statusMu.Unlock()
+		return cached
+	}
+	statusRunning = true
+	statusMu.Unlock()
 
+	// Slow operation WITHOUT holding the lock
 	status := fetchStatus()
 	data, _ := json.Marshal(status)
+
+	statusMu.Lock()
 	statusCache = data
 	statusCacheAt = time.Now()
-	return statusCache
+	statusRunning = false
+	result := statusCache
+	statusMu.Unlock()
+	return result
 }
 
 // GetSystemStatusCached returns cached data without blocking.
-// Returns nil if cache is cold or expired — caller should skip the panel.
+// Returns nil if cache is cold — triggers async refresh.
 func GetSystemStatusCached() json.RawMessage {
 	statusMu.Lock()
 	defer statusMu.Unlock()
@@ -75,9 +89,21 @@ func GetSystemStatusCached() json.RawMessage {
 		return statusCache
 	}
 
-	// Trigger async refresh if stale
-	go GetSystemStatus()
-	return nil
+	// Trigger async refresh if not already running
+	if !statusRunning {
+		statusRunning = true
+		go func() {
+			status := fetchStatus()
+			data, _ := json.Marshal(status)
+			statusMu.Lock()
+			statusCache = data
+			statusCacheAt = time.Now()
+			statusRunning = false
+			statusMu.Unlock()
+		}()
+	}
+
+	return statusCache // nil on first cold call, stale on re-fetch
 }
 
 // findOpenclawBinary finds the openclaw binary, trying fallback paths if needed.
