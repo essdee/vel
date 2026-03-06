@@ -250,6 +250,13 @@ func Check(r *http.Request) *User {
 		}
 	}
 
+	// Try X-Telegram-Init-Data header (Telegram Mini App panels)
+	if initData := r.Header.Get("X-Telegram-Init-Data"); initData != "" {
+		if user := ValidateInitData(initData); user != nil && IsAllowed(user.ID) {
+			return user
+		}
+	}
+
 	return nil
 }
 

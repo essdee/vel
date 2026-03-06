@@ -176,17 +176,13 @@
 
       const api = useMemo(() => ({
         fetch: async (url, opts) => {
-          const fetchOpts = browserMode
-            ? { ...opts, credentials: 'same-origin', headers: { ...opts?.headers } }
-            : { ...opts, credentials: 'same-origin', headers: { ...opts?.headers, 'Content-Type': 'application/json' } };
-          // Token auth: pass ?token= as Bearer header for API calls
+          const fetchOpts = { ...opts, credentials: 'same-origin', headers: { ...opts?.headers } };
+          // Auth: cookie is always sent via credentials. Add Bearer for token mode.
           const urlTk = new URLSearchParams(window.location.search).get('token');
           if (urlTk) fetchOpts.headers = { ...fetchOpts.headers, 'Authorization': 'Bearer ' + urlTk };
+          // Telegram mode: send initData as header, not body — preserves original method & body
           if (!browserMode && initData) {
-            fetchOpts.method = fetchOpts.method || 'POST';
-            const body = fetchOpts.body ? JSON.parse(fetchOpts.body) : {};
-            body.initData = initData;
-            fetchOpts.body = JSON.stringify(body);
+            fetchOpts.headers = { ...fetchOpts.headers, 'X-Telegram-Init-Data': initData };
           }
           return fetch(url || `/api/panels/${manifest.id}`, fetchOpts);
         }
