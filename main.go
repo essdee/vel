@@ -21,6 +21,7 @@ import (
 	"vel/internal/panels"
 	"vel/internal/server"
 	"vel/internal/verify"
+	vel "vel/pkg/vel"
 )
 
 const Version = "0.1.0"
@@ -66,6 +67,9 @@ type AppConfig struct {
 		Port int `json:"port"`
 	} `json:"server"`
 	Port int `json:"port"` // legacy field
+
+	// Environment
+	Staging bool `json:"staging"` // true = staging instance, disables production-only features
 }
 
 func main() {
@@ -293,6 +297,12 @@ func runStart(args []string) {
 		log.Fatalf("[Config] Invalid config.json: %s", err)
 	}
 	fmt.Println("[Config] Loaded config.json")
+
+	// Set staging flag in SDK so apps can check vel.IsStaging()
+	vel.SetStaging(config.Staging)
+	if config.Staging {
+		fmt.Println("[Config] Running in STAGING mode")
+	}
 
 	// BOT_TOKEN
 	botToken := os.Getenv("BOT_TOKEN")
