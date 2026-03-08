@@ -1,17 +1,39 @@
 #!/bin/bash
-# Vel Deploy Script — copy to deploy.sh and customize for your instance
+# Vel Deploy Script — auto-detects everything, no configuration needed.
 # Called by the Velboard "Deploy" button via POST /api/updates/apply
 #
-# Usage: cp deploy.sh.example deploy.sh && chmod +x deploy.sh
-# Then edit paths and service name below.
+# Setup: cp deploy.sh.example deploy.sh && chmod +x deploy.sh
 
 set -e
 
-# ---- CUSTOMIZE THESE ----
-VEL_DIR="$(cd "$(dirname "$0")" && pwd)"  # auto-detects Vel root
-GO="/usr/local/go/bin/go"
-SERVICE_NAME="openclaw-dashboard"  # systemd service name
-# ---- END CUSTOMIZE ----
+VEL_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Auto-detect Go
+GO="$(which go 2>/dev/null || echo /usr/local/go/bin/go)"
+
+# Auto-detect systemd service name by finding which service runs from this dir
+SERVICE_NAME=""
+for svc in openclaw-dashboard openclaw-dashboard-staging; do
+    unit_path=$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)
+    if [ -n "$unit_path" ] && grep -q "$VEL_DIR" "$unit_path" 2>/dev/null; then
+        SERVICE_NAME="$svc"
+        break
+    fi
+done
+# Fallback: check user services
+if [ -z "$SERVICE_NAME" ]; then
+    for svc in openclaw-dashboard openclaw-dashboard-staging; do
+        unit_path=$(systemctl --user show "$svc" -p FragmentPath --value 2>/dev/null || true)
+        if [ -n "$unit_path" ] && grep -q "$VEL_DIR" "$unit_path" 2>/dev/null; then
+            SERVICE_NAME="$svc"
+            break
+        fi
+    done
+fi
+if [ -z "$SERVICE_NAME" ]; then
+    echo "❌ Could not auto-detect systemd service for $VEL_DIR"
+    exit 1
+fi
 
 echo "⚡ Vel Deploy"
 echo ""
