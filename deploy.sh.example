@@ -1,0 +1,54 @@
+#!/bin/bash
+# Vel Deploy Script — copy to deploy.sh and customize for your instance
+# Called by the Velboard "Deploy" button via POST /api/updates/apply
+#
+# Usage: cp deploy.sh.example deploy.sh && chmod +x deploy.sh
+# Then edit paths and service name below.
+
+set -e
+
+# ---- CUSTOMIZE THESE ----
+VEL_DIR="$(cd "$(dirname "$0")" && pwd)"  # auto-detects Vel root
+GO="/usr/local/go/bin/go"
+SERVICE_NAME="openclaw-dashboard"  # systemd service name
+# ---- END CUSTOMIZE ----
+
+echo "⚡ Vel Deploy"
+echo ""
+
+# Step 1: Pull framework
+echo "📥 Pulling vel framework..."
+cd "$VEL_DIR"
+git pull --ff-only 2>/dev/null || echo "  (pull failed — skipping)"
+
+# Step 2: Pull each app
+for app_dir in "$VEL_DIR"/apps/*/; do
+    app_name=$(basename "$app_dir")
+    if [ -d "$app_dir/.git" ]; then
+        echo "📥 Pulling $app_name..."
+        cd "$app_dir"
+        git pull --ff-only 2>/dev/null || echo "  (pull failed for $app_name — continuing)"
+    fi
+done
+
+# Step 3: Build
+echo ""
+echo "🔨 Building..."
+cd "$VEL_DIR"
+$GO run . build
+
+# Step 4: Restart
+echo ""
+echo "🔄 Restarting $SERVICE_NAME..."
+sudo systemctl restart "$SERVICE_NAME"
+sleep 2
+
+if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo ""
+    echo "✅ Deploy complete!"
+else
+    echo ""
+    echo "❌ Service failed to start!"
+    sudo journalctl -u "$SERVICE_NAME" --no-pager -n 20
+    exit 1
+fi
