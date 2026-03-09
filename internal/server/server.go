@@ -767,7 +767,11 @@ func NewServer(cfg *Config) http.Handler {
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
 		}
-		deployScript := filepath.Join(cfg.RootDir, "deploy.sh")
+		deployScript := filepath.Join(cfg.RootDir, "sdk", "vel", "deploy.sh")
+		// Fallback to legacy root location
+		if _, err := os.Stat(deployScript); err != nil {
+			deployScript = filepath.Join(cfg.RootDir, "deploy.sh")
+		}
 		if _, err := os.Stat(deployScript); err != nil {
 			w.WriteHeader(500)
 			writeJSON(w, map[string]interface{}{"error": "deploy.sh not found"})

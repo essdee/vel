@@ -8,7 +8,7 @@
 
 ## What is this?
 
-The `sdk/` directory contains scripts that Vel calls from API endpoints. They bridge the dashboard to external systems — things like restarting services, fetching usage data, or running diagnostics.
+The `sdk/` directory contains scripts that Vel calls from API endpoints. They bridge the dashboard to external systems — things like restarting services, deploying updates, or fetching usage data.
 
 Apps and panels reference these scripts by path. Vel's server resolves them at `{velRoot}/sdk/`.
 
@@ -16,13 +16,37 @@ Apps and panels reference these scripts by path. Vel's server resolves them at `
 
 ```
 sdk/
-├── README.md           ← you are here
-└── openclaw/           ← OpenClaw-specific scripts
-    ├── restart.sh      ← restart the gateway service
-    └── claude-usage-poll.sh  ← fetch Claude Max usage via OAuth API
+├── README.md                  ← you are here
+├── openclaw/                  ← OpenClaw gateway scripts
+│   ├── restart.sh             ← restart the gateway service
+│   └── claude-usage-poll.sh   ← fetch Claude Max usage via OAuth API
+└── vel/                       ← Vel framework scripts
+    └── deploy.sh              ← pull, build, restart
 ```
 
 ## Scripts
+
+### `vel/deploy.sh`
+
+Pulls latest code, builds, and restarts the Vel dashboard service.
+
+**Called by:** `POST /api/updates/apply` (requires auth)
+
+**Used in:** Velboard's `updates` panel → Deploy button
+
+**What it does:**
+1. Auto-detects the systemd service running from this directory
+2. `git pull --ff-only` on the framework and each app in `apps/`
+3. `go run . build`
+4. `systemctl restart {service}`
+5. Verifies the service came up
+
+**Requirements:**
+- Go installed
+- Vel running as a systemd service (system or user)
+- `sudo` access for `systemctl restart` (system services)
+
+---
 
 ### `openclaw/restart.sh`
 
@@ -72,21 +96,27 @@ Fetches Claude Max subscription usage (5-hour and 7-day windows) from the Anthro
 
 ---
 
-## Related: `deploy.sh`
+## How apps use SDK scripts
 
-The deploy script lives at the Vel root (not in `sdk/`) because it's a user-copied template:
+Apps don't call SDK scripts directly. Instead, Vel's server exposes API endpoints that run them:
 
-```bash
-cp deploy.sh.example deploy.sh && chmod +x deploy.sh
+| Script | API Endpoint | Method | Auth |
+|---|---|---|---|
+| `vel/deploy.sh` | `/api/updates/apply` | POST | Full |
+| `openclaw/restart.sh` | `/api/gateway/restart` | POST | Full (60s rate limit) |
+| `openclaw/claude-usage-poll.sh` | `/api/usage/refresh` | POST | Full |
+
+Panel UI components call these endpoints via `fetch()`. The server captures stdout/stderr and returns it as JSON:
+
+```json
+{ "ok": true, "output": "✓ Gateway restarted successfully (PID: 12345)" }
 ```
 
-**Called by:** `POST /api/updates/apply` (requires auth)
+Or on failure:
 
-**Used in:** Velboard's `updates` panel → Deploy button
-
-**What it does:** `git pull` → `go run . build` → `systemctl restart`
-
----
+```json
+{ "ok": false, "error": "exit status 1", "output": "ERROR: service not found" }
+```
 
 ## Adding new scripts
 
