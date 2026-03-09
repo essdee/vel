@@ -516,7 +516,11 @@ func NewServer(cfg *Config) http.Handler {
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
 		}
-		scriptPath := filepath.Join(cfg.Workspace, "skills", "claude-usage-monitor", "scripts", "claude-usage-poll.sh")
+		scriptPath := filepath.Join(cfg.RootDir, "sdk", "openclaw", "claude-usage-poll.sh")
+		// Fallback to legacy location
+		if _, err := os.Stat(scriptPath); err != nil {
+			scriptPath = filepath.Join(cfg.Workspace, "skills", "claude-usage-monitor", "scripts", "claude-usage-poll.sh")
+		}
 		cmd := exec.Command("bash", scriptPath)
 		cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"))
 		if err := cmd.Run(); err != nil {
@@ -782,6 +786,55 @@ func NewServer(cfg *Config) http.Handler {
 		// Detach — deploy.sh will restart the service
 		go cmd.Wait()
 		writeJSON(w, map[string]interface{}{"ok": true, "message": "Deploy started. Dashboard will restart shortly."})
+	})
+
+	// Gateway restart (SDK)
+	var lastGatewayRestart time.Time
+	var gatewayRestartMu sync.Mutex
+	mux.HandleFunc("/api/gateway/restart", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		user := auth.Check(r)
+		if user == nil || auth.IsScopedUser(user) {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+
+		// Rate limit: 1 restart per 60 seconds
+		gatewayRestartMu.Lock()
+		if time.Since(lastGatewayRestart) < 60*time.Second {
+			gatewayRestartMu.Unlock()
+			w.WriteHeader(429)
+			writeJSON(w, map[string]interface{}{"error": "Please wait 60 seconds between restarts"})
+			return
+		}
+		lastGatewayRestart = time.Now()
+		gatewayRestartMu.Unlock()
+
+		scriptPath := filepath.Join(cfg.RootDir, "sdk", "openclaw", "restart.sh")
+		if _, err := os.Stat(scriptPath); err != nil {
+			w.WriteHeader(500)
+			writeJSON(w, map[string]interface{}{"error": "restart.sh not found in sdk/openclaw/"})
+			return
+		}
+
+		cmd := exec.Command("bash", scriptPath)
+		cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"))
+		output, err := cmd.CombinedOutput()
+
+		result := map[string]interface{}{
+			"output": string(output),
+		}
+		if err != nil {
+			result["ok"] = false
+			result["error"] = err.Error()
+		} else {
+			result["ok"] = true
+		}
+		writeJSON(w, result)
 	})
 
 	// WebSocket
