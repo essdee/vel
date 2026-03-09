@@ -50,9 +50,10 @@ type AppConfig struct {
 
 	// Auth
 	Auth struct {
-		AllowedTelegramUsers []int64 `json:"allowedTelegramUsers"`
-		Mode         string  `json:"mode"`
-		Token        string  `json:"token"`
+		AllowedTelegramUsers []int64             `json:"allowedTelegramUsers"`
+		Mode                 string              `json:"mode"`
+		Token                string              `json:"token"`
+		Tokens               []auth.ScopedToken  `json:"tokens,omitempty"`
 	} `json:"auth"`
 	AllowedUsers []int64 `json:"allowedUsers"` // legacy (use auth.allowedTelegramUsers)
 
@@ -359,6 +360,7 @@ func runStart(args []string) {
 	// Init auth
 	auth.Init(botToken, allowedUsers, strings.TrimSpace(string(cookieSecret)))
 	auth.InitMode(authMode, config.Auth.Token)
+	auth.InitScopedTokens(config.Auth.Tokens)
 
 	// Port: flag > env PORT > config.server.port > config.port > 3700
 	port := *portFlag
@@ -538,6 +540,7 @@ func runStart(args []string) {
 	cfg := &server.Config{
 		RootDir:      rootDir,
 		Workspace:    workspace,
+		ConfigPath:   configPath,
 		Port:         port,
 		Registry:     registry,
 		Order:        panelOrder,

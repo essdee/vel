@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -12,8 +13,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+// ScopedToken represents a token with restricted API access.
+type ScopedToken struct {
+	Name   string   `json:"name"`
+	Token  string   `json:"token"`
+	Scopes []string `json:"scopes"` // allowed API path prefixes (e.g. "/token-swap/api/usage-share")
+}
 
 var (
 	botToken     string
@@ -21,6 +30,8 @@ var (
 	cookieSecret string
 	authMode     string // "telegram", "token", "none"
 	authToken    string
+	scopedTokens []ScopedToken
+	scopedMu     sync.RWMutex
 )
 
 func Init(token string, allowed []int64, secret string) {
@@ -36,6 +47,109 @@ func Init(token string, allowed []int64, secret string) {
 func InitMode(mode, token string) {
 	authMode = mode
 	authToken = token
+}
+
+// InitScopedTokens loads scoped tokens into memory.
+func InitScopedTokens(tokens []ScopedToken) {
+	scopedMu.Lock()
+	defer scopedMu.Unlock()
+	scopedTokens = make([]ScopedToken, len(tokens))
+	copy(scopedTokens, tokens)
+}
+
+// GetScopedTokens returns a copy of all scoped tokens (with tokens masked).
+func GetScopedTokens() []ScopedToken {
+	scopedMu.RLock()
+	defer scopedMu.RUnlock()
+	result := make([]ScopedToken, len(scopedTokens))
+	for i, t := range scopedTokens {
+		result[i] = ScopedToken{
+			Name:   t.Name,
+			Token:  maskScopedToken(t.Token),
+			Scopes: t.Scopes,
+		}
+	}
+	return result
+}
+
+// GetScopedTokensFull returns unmasked tokens (for config write-back).
+func GetScopedTokensFull() []ScopedToken {
+	scopedMu.RLock()
+	defer scopedMu.RUnlock()
+	result := make([]ScopedToken, len(scopedTokens))
+	copy(result, scopedTokens)
+	return result
+}
+
+// AddScopedToken adds a new scoped token. Returns the generated token string.
+func AddScopedToken(name string, scopes []string) (string, error) {
+	scopedMu.Lock()
+	defer scopedMu.Unlock()
+
+	// Check for duplicate name
+	for _, t := range scopedTokens {
+		if t.Name == name {
+			return "", fmt.Errorf("token with name %q already exists", name)
+		}
+	}
+
+	token := generateRandomToken(32)
+	scopedTokens = append(scopedTokens, ScopedToken{
+		Name:   name,
+		Token:  token,
+		Scopes: scopes,
+	})
+	return token, nil
+}
+
+// RemoveScopedToken removes a scoped token by name.
+func RemoveScopedToken(name string) bool {
+	scopedMu.Lock()
+	defer scopedMu.Unlock()
+
+	for i, t := range scopedTokens {
+		if t.Name == name {
+			scopedTokens = append(scopedTokens[:i], scopedTokens[i+1:]...)
+			return true
+		}
+	}
+	return false
+}
+
+// CheckScopedToken checks if a token matches any scoped token and if the path is allowed.
+// Returns the token name if valid, empty string if not.
+func CheckScopedToken(token, path string) string {
+	if token == "" {
+		return ""
+	}
+	scopedMu.RLock()
+	defer scopedMu.RUnlock()
+
+	for _, t := range scopedTokens {
+		if t.Token == token {
+			// Check if path matches any scope
+			for _, scope := range t.Scopes {
+				if strings.HasPrefix(path, scope) {
+					return t.Name
+				}
+			}
+			return "" // token valid but path not in scope
+		}
+	}
+	return ""
+}
+
+func generateRandomToken(length int) string {
+	b := make([]byte, length)
+	rand.Read(b)
+	return hex.EncodeToString(b)[:length]
+}
+
+func maskScopedToken(t string) string {
+	if len(t) <= 8 {
+		return "••••"
+	}
+	return t[:4] + "••••" + t[len(t)-4:]
 }
 
 // GetAuthMode returns the current auth mode.
@@ -224,7 +338,9 @@ func GetUserFromCookie(r *http.Request) *User {
 	return &user
 }
 
-// Check returns authenticated user or nil
+// Check returns authenticated user or nil.
+// Checks (in order): test mode, auth mode "none", cookie, Bearer header,
+// ?token= query param (master token), X-Telegram-Init-Data, scoped tokens.
 func Check(r *http.Request) *User {
 	if IsTestMode() {
 		return &User{ID: 0, FirstName: "Test", Username: "test"}
@@ -250,6 +366,17 @@ func Check(r *http.Request) *User {
 		}
 	}
 
+	// Try ?token= query parameter — master token (full access)
+	if qToken := r.URL.Query().Get("token"); qToken != "" {
+		if ValidateToken(qToken) {
+			return &User{ID: 1, FirstName: "Admin", Username: "admin"}
+		}
+		// Try scoped tokens — restricted to specific API paths
+		if name := CheckScopedToken(qToken, r.URL.Path); name != "" {
+			return &User{ID: 2, FirstName: name, Username: "scoped:" + name}
+		}
+	}
+
 	// Try X-Telegram-Init-Data header (Telegram Mini App panels)
 	if initData := r.Header.Get("X-Telegram-Init-Data"); initData != "" {
 		if user := ValidateInitData(initData); user != nil && IsAllowed(user.ID) {
@@ -258,6 +385,11 @@ func Check(r *http.Request) *User {
 	}
 
 	return nil
+}
+
+// IsScopedUser returns true if the user was authenticated via a scoped token.
+func IsScopedUser(u *User) bool {
+	return u != nil && strings.HasPrefix(u.Username, "scoped:")
 }
 
 // GetBotToken returns the configured bot token.

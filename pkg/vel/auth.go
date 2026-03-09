@@ -31,6 +31,11 @@ func CheckBotToken(token string) bool {
 	return auth.CheckBotToken(token)
 }
 
+// IsScopedUser returns true if the user was authenticated via a scoped token.
+func IsScopedUser(u *User) bool {
+	return u != nil && u.Username != "" && len(u.Username) > 7 && u.Username[:7] == "scoped:"
+}
+
 // GetBotToken returns the configured bot token.
 func GetBotToken() string {
 	return auth.GetBotToken()

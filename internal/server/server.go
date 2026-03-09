@@ -27,6 +27,7 @@ import (
 type Config struct {
 	RootDir      string
 	Workspace    string
+	ConfigPath   string
 	Port         int
 	Registry     *panels.Registry
 	Order        []string
@@ -419,6 +420,72 @@ func NewServer(cfg *Config) http.Handler {
 		writeJSON(w, resp)
 	})
 
+	// Scoped tokens API
+	mux.HandleFunc("/api/tokens", func(w http.ResponseWriter, r *http.Request) {
+		user := auth.Check(r)
+		if user == nil || auth.IsScopedUser(user) {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+		switch r.Method {
+		case "GET":
+			tokens := auth.GetScopedTokens()
+			writeJSON(w, map[string]interface{}{"tokens": tokens})
+		case "POST":
+			var body struct {
+				Name   string   `json:"name"`
+				Scopes []string `json:"scopes"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"error": "Bad request"})
+				return
+			}
+			if body.Name == "" || len(body.Scopes) == 0 {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"error": "name and scopes required"})
+				return
+			}
+			token, err := auth.AddScopedToken(body.Name, body.Scopes)
+			if err != nil {
+				w.WriteHeader(409)
+				writeJSON(w, map[string]interface{}{"error": err.Error()})
+				return
+			}
+			// Write back to config file
+			if writeErr := writeScopedTokensToConfig(cfg.ConfigPath); writeErr != nil {
+				fmt.Printf("[Auth] Warning: failed to persist scoped tokens: %v\n", writeErr)
+			}
+			writeJSON(w, map[string]interface{}{"ok": true, "name": body.Name, "token": token})
+		case "DELETE":
+			name := r.URL.Query().Get("name")
+			if name == "" {
+				var body struct {
+					Name string `json:"name"`
+				}
+				json.NewDecoder(r.Body).Decode(&body)
+				name = body.Name
+			}
+			if name == "" {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"error": "name required"})
+				return
+			}
+			if !auth.RemoveScopedToken(name) {
+				w.WriteHeader(404)
+				writeJSON(w, map[string]interface{}{"error": "token not found"})
+				return
+			}
+			if writeErr := writeScopedTokensToConfig(cfg.ConfigPath); writeErr != nil {
+				fmt.Printf("[Auth] Warning: failed to persist scoped tokens: %v\n", writeErr)
+			}
+			writeJSON(w, map[string]interface{}{"ok": true})
+		default:
+			http.Error(w, "Method not allowed", 405)
+		}
+	})
+
 	mux.HandleFunc("/api/version", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]interface{}{
 			"version": cfg.Version,
@@ -797,6 +864,59 @@ func servesPanelData(w http.ResponseWriter, r *http.Request, panelID string, cfg
 func writeJSON(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
+}
+
+// writeScopedTokensToConfig reads the config file, updates auth.tokens, and writes back.
+func writeScopedTokensToConfig(configPath string) error {
+	if configPath == "" {
+		return fmt.Errorf("config path not set")
+	}
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+
+	var cfg map[string]json.RawMessage
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	// Parse auth section
+	var authSection map[string]json.RawMessage
+	if raw, ok := cfg["auth"]; ok {
+		if err := json.Unmarshal(raw, &authSection); err != nil {
+			authSection = map[string]json.RawMessage{}
+		}
+	} else {
+		authSection = map[string]json.RawMessage{}
+	}
+
+	// Update tokens
+	tokens := auth.GetScopedTokensFull()
+	tokensJSON, err := json.Marshal(tokens)
+	if err != nil {
+		return fmt.Errorf("marshal tokens: %w", err)
+	}
+	if len(tokens) == 0 {
+		delete(authSection, "tokens")
+	} else {
+		authSection["tokens"] = tokensJSON
+	}
+
+	// Write auth section back
+	authJSON, err := json.Marshal(authSection)
+	if err != nil {
+		return fmt.Errorf("marshal auth: %w", err)
+	}
+	cfg["auth"] = authJSON
+
+	// Write config file with indentation
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	return os.WriteFile(configPath, out, 0600)
 }
 
 func cacheHandler(h http.Handler, maxAge string) http.Handler {
