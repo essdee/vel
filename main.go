@@ -159,8 +159,10 @@ func runVerify(args []string) {
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(out))
 
-		// Write to verify-log.json
-		logPath := filepath.Join(rootDir, "verify-log.json")
+		// Write to logs/verify.jsonl (create logs/ dir if needed).
+		logsDir := filepath.Join(rootDir, "logs")
+		os.MkdirAll(logsDir, 0755)
+		logPath := filepath.Join(logsDir, "verify.jsonl")
 		os.WriteFile(logPath, out, 0644)
 
 		if result.Failed > 0 {

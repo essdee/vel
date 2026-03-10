@@ -136,6 +136,9 @@ func (hc *healthCacher) get(cfg *Config) json.RawMessage {
 }
 
 func NewServer(cfg *Config) http.Handler {
+	// Initialize error logger before serving any requests.
+	vel.InitErrorLog(filepath.Join(cfg.RootDir, "logs"))
+
 	mux := http.NewServeMux()
 	apiLimiter := newRateLimiter(1000, 15*time.Minute, false)
 	authLimiter := newRateLimiter(10, 15*time.Minute, true)
@@ -171,7 +174,7 @@ func NewServer(cfg *Config) http.Handler {
 	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
-			http.NotFound(w, r)
+			serve404(w, r)
 			return
 		}
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -841,6 +844,37 @@ func NewServer(cfg *Config) http.Handler {
 		writeJSON(w, result)
 	})
 
+	// Error log API — returns recent error log entries (auth-protected).
+	mux.HandleFunc("/api/errors", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		user := auth.Check(r)
+		if user == nil || auth.IsScopedUser(user) {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+		limit := 100
+		if lStr := r.URL.Query().Get("limit"); lStr != "" {
+			if n, err := strconv.Atoi(lStr); err == nil && n > 0 {
+				if n > 1000 {
+					n = 1000
+				}
+				limit = n
+			}
+		}
+		entries := vel.GetRecentErrors(limit)
+		if entries == nil {
+			entries = []vel.ErrorEntry{}
+		}
+		writeJSON(w, map[string]interface{}{
+			"errors": entries,
+			"total":  len(entries),
+		})
+	})
+
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, cfg)
@@ -852,8 +886,8 @@ func NewServer(cfg *Config) http.Handler {
 		fmt.Println("[Server] Pre-warmed openclaw-status cache")
 	}()
 
-	// Wrap with middleware
-	return applyMiddleware(mux)
+	// Wrap with middleware: recovery (outermost) → security/gzip → mux.
+	return recoveryMiddleware(applyMiddleware(mux), cfg)
 }
 
 func servesPanelData(w http.ResponseWriter, r *http.Request, panelID string, cfg *Config) {

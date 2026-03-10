@@ -96,11 +96,11 @@ cd "$VEL_DIR"
 
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
     echo ""
-    echo "❌ Verify failed! Check verify-log.json for details."
+    echo "❌ Verify failed! Check logs/verify.jsonl for details."
 
     # Notify OpenClaw agent if gateway is available
     if [ -n "$OPENCLAW_GATEWAY_TOKEN" ]; then
-        VERIFY_LOG=$(cat "$VEL_DIR/verify-log.json" 2>/dev/null || echo "{}")
+        VERIFY_LOG=$(cat "$VEL_DIR/logs/verify.jsonl" 2>/dev/null || echo "{}")
         curl -s -X POST "http://localhost:${OPENCLAW_GATEWAY_PORT}/__openclaw__/api/cron/wake" \
             -H "Authorization: Bearer ${OPENCLAW_GATEWAY_TOKEN}" \
             -H "Content-Type: application/json" \
