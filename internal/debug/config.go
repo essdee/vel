@@ -8,7 +8,7 @@ import (
 
 // DebugConfig holds all debug-related configuration.
 type DebugConfig struct {
-	Enabled    bool   // VEL_DEBUG=1
+	Enabled    bool   // default true; VEL_DEBUG=0 to disable
 	AIDebug    bool   // VEL_AI_DEBUG=1 (implies Enabled)
 	LogFormat  string // "json" (default) or "text"
 	LogLevel   string // "debug", "info" (default), "warn", "error"
@@ -17,9 +17,11 @@ type DebugConfig struct {
 }
 
 // DefaultConfig returns a DebugConfig with sensible defaults.
+// Debug server is enabled by default — it binds to 127.0.0.1 only
+// and is required for `vel verify` runtime checks.
 func DefaultConfig() DebugConfig {
 	return DebugConfig{
-		Enabled:    false,
+		Enabled:    true,
 		AIDebug:    false,
 		LogFormat:  "json",
 		LogLevel:   "info",
@@ -56,8 +58,11 @@ func LoadConfig(cfgMap map[string]interface{}) DebugConfig {
 	}
 
 	// Environment variable overrides (higher priority)
-	if os.Getenv("VEL_DEBUG") == "1" {
+	switch os.Getenv("VEL_DEBUG") {
+	case "1":
 		dc.Enabled = true
+	case "0":
+		dc.Enabled = false
 	}
 	if os.Getenv("VEL_AI_DEBUG") == "1" {
 		dc.AIDebug = true

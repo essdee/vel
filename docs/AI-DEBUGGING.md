@@ -20,8 +20,10 @@ The human should never be asked to "try this link", "check if this works", or "s
 - **curl**: Test any endpoint locally (`http://localhost:3900/...`) or externally (`https://w3-ram.ai.essd.ee/...`)
 - **DNS/networking**: `host`, `nslookup`, `curl -v`, `ss -tlnp`
 
-### Debug Server (when VEL_DEBUG=1)
+### Debug Server (enabled by default)
 Port: `localhost:6060` — always accessible from the server.
+The debug server is enabled by default and binds to `127.0.0.1` only.
+To disable: set `VEL_DEBUG=0` or `"debug": {"enabled": false}` in config.json.
 
 | Endpoint | What it tells you |
 |----------|------------------|
