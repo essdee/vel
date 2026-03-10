@@ -179,7 +179,7 @@ func NewServer(cfg *Config) http.Handler {
 		}
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 		w.Header().Set("Pragma", "no-cache")
-		serveHTMLWithAuth(w, r, landingFile)
+		http.ServeFile(w, r, landingFile)
 	})
 	mux.HandleFunc("/dashboard", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -193,9 +193,9 @@ func NewServer(cfg *Config) http.Handler {
 			}
 		}
 		if hasPanels {
-			serveHTMLWithAuth(w, r, filepath.Join(cfg.RootDir, "core", "public", "shell.html"))
+			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "shell.html"))
 		} else {
-			serveHTMLWithAuth(w, r, filepath.Join(cfg.RootDir, "core", "public", "welcome.html"))
+			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "welcome.html"))
 		}
 	})
 
@@ -239,19 +239,6 @@ func NewServer(cfg *Config) http.Handler {
 						default:
 							w.Header().Set("Cache-Control", "public, max-age=3600")
 						}
-						// For HTML files (index.html), inject auth bootstrap
-						relPath := strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(urlPfx, "/"))
-						if relPath == "" || relPath == "/" {
-							relPath = "/index.html"
-						}
-						filePath := filepath.Join(staticDir, relPath)
-						if strings.HasSuffix(filePath, ".html") || strings.HasSuffix(filePath, ".htm") {
-							if _, err := os.Stat(filePath); err == nil {
-								serveHTMLWithAuth(w, r, filePath)
-								return
-							}
-						}
-						// Non-HTML: serve normally via FileServer
 						fs := http.StripPrefix(urlPfx, http.FileServer(http.Dir(staticDir)))
 						fs.ServeHTTP(w, r)
 					}))
@@ -316,7 +303,7 @@ func NewServer(cfg *Config) http.Handler {
 							w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 							w.Header().Set("Pragma", "no-cache")
 						}
-						serveHTMLWithAuth(w, r, file)
+						http.ServeFile(w, r, file)
 					})
 				}
 			}
@@ -358,7 +345,7 @@ func NewServer(cfg *Config) http.Handler {
 			}
 			w.Header().Set("Content-Type", "application/javascript")
 			w.Header().Set("Cache-Control", "no-cache, must-revalidate")
-			serveHTMLWithAuth(w, r, uiPath)
+			http.ServeFile(w, r, uiPath)
 			return
 		}
 
