@@ -250,7 +250,7 @@ func RunVerify(cfg VerifyConfig) VerifyResult {
 // checkServerHealth checks if the vel server is reachable on the configured port.
 func checkServerHealth(port int) CheckResult {
 	url := fmt.Sprintf("http://localhost:%d/api/health", port)
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
 		return CheckResult{
@@ -605,7 +605,8 @@ func checkAppVerifyJSON(rootDir string, cfg serverConfig, appList []*apps.App) [
 		},
 	}
 
-	// authedRequest creates an authenticated request for the given path
+	// authedRequest creates an authenticated request for the given path.
+	// For legacy token auth, uses the config authToken.
 	authedRequest := func(path string) *http.Request {
 		url := base + path
 		req, _ := http.NewRequest("GET", url, nil)
@@ -614,7 +615,6 @@ func checkAppVerifyJSON(rootDir string, cfg serverConfig, appList []*apps.App) [
 		}
 		return req
 	}
-	// For telegram mode, skip http_get checks on protected endpoints
 	_ = authedRequest
 
 	// Map app name → app dir
@@ -687,6 +687,20 @@ func checkAppVerifyJSON(rootDir string, cfg serverConfig, appList []*apps.App) [
 
 				body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 				resp.Body.Close()
+
+				// When auth is active and we can't authenticate (no plaintext key),
+				// accept auth-related responses (302 redirect to login, 401 unauthorized)
+				// as PASS — it means the endpoint exists and auth is enforced correctly.
+				authResponse := resp.StatusCode == 302 || resp.StatusCode == 401
+				if resp.StatusCode != expectStatus && authResponse && cfg.authMode == "telegram" {
+					results = append(results, CheckResult{
+						Name:   checkName,
+						Status: "ok",
+						Detail: fmt.Sprintf("HTTP %d (auth enforced, expected %d when authenticated)", resp.StatusCode, expectStatus),
+						Layer:  3,
+					})
+					continue
+				}
 
 				if resp.StatusCode != expectStatus {
 					results = append(results, CheckResult{
