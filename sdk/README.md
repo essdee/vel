@@ -21,7 +21,8 @@ sdk/
 │   ├── restart.sh             ← restart the gateway service
 │   └── claude-usage-poll.sh   ← fetch Claude Max usage via OAuth API
 └── vel/                       ← Vel framework scripts
-    └── deploy.sh              ← pull, build, restart
+    ├── deploy.sh              ← pull, build, restart
+    └── verify-cron.sh         ← run vel verify on a schedule, alert on failure
 ```
 
 ## Scripts
@@ -93,6 +94,44 @@ Fetches Claude Max subscription usage (5-hour and 7-day windows) from the Anthro
 | `CLAUDE_USAGE_OUTPUT` | `{workspace}/claude-usage.json` | Output file path |
 | `CLAUDE_CREDENTIALS_FILE` | `~/.claude/.credentials.json` | OAuth credentials |
 | `OPENCLAW_WORKSPACE` | `~/.openclaw/workspace` | Workspace root |
+
+---
+
+---
+
+### `vel/verify-cron.sh`
+
+Runs `vel verify --json` on a schedule and sends an OpenClaw wake notification if checks fail.
+
+**Not called by the server** — runs directly via cron.
+
+**What it does:**
+1. Runs `./vel verify --json` (appends one JSONL line to `logs/verify.jsonl`)
+2. If verify fails (exit code non-zero): reads `OPENCLAW_GATEWAY_TOKEN` from `.env`
+3. POSTs a wake notification to the local OpenClaw gateway with the latest verify result
+4. Exits with the verify exit code (so cron can track failures)
+
+**Crontab setup:**
+```bash
+# Run every 15 minutes — adjust path to your vel install
+*/15 * * * * /opt/vel/sdk/vel/verify-cron.sh
+```
+
+**Requirements:**
+- `vel` binary built and present in the vel root directory
+- `.env` file with `OPENCLAW_GATEWAY_TOKEN=<token>` (for wake notifications)
+- OpenClaw gateway running locally (for wake notifications)
+
+**Environment variables:**
+| Variable | Default | Description |
+|---|---|---|
+| `OPENCLAW_GATEWAY_PORT` | `18789` | OpenClaw gateway port |
+
+**Wake notification:** When verify fails, the agent receives a message like:
+```
+vel verify cron check FAILED. Latest result: {"timestamp":"...","status":"fail",...}
+```
+The agent can then inspect the failure, fix the issue, and re-deploy — without human intervention.
 
 ---
 

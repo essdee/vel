@@ -1,0 +1,16 @@
+{
+  "id": "verify-status",
+  "contractVersion": "1.0",
+  "name": "Verify Status",
+  "description": "Deployment verification status and history",
+  "version": "1.0.0",
+  "author": "core",
+  "position": 5,
+  "size": "half",
+  "refreshMs": 60000,
+  "requires": [],
+  "capabilities": ["fetch"],
+  "dataSchema": {
+    "type": "object"
+  }
+}

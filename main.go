@@ -165,11 +165,33 @@ func runVerify(args []string) {
 		out, _ := json.MarshalIndent(result, "", "  ")
 		fmt.Println(string(out))
 
-		// Write to logs/verify.jsonl (create logs/ dir if needed).
+		// Build a compact JSONL entry with timestamp — one line per run.
+		type verifyLogEntry struct {
+			Timestamp string               `json:"timestamp"`
+			Status    string               `json:"status"`
+			Passed    int                  `json:"passed"`
+			Failed    int                  `json:"failed"`
+			Skipped   int                  `json:"skipped"`
+			Checks    []verify.CheckResult `json:"checks"`
+		}
+		entry := verifyLogEntry{
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			Status:    result.Status,
+			Passed:    result.Passed,
+			Failed:    result.Failed,
+			Skipped:   result.Skipped,
+			Checks:    result.Checks,
+		}
+		lineJSON, _ := json.Marshal(entry)
+
+		// Append one JSONL line per run (create logs/ dir if needed).
 		logsDir := filepath.Join(rootDir, "logs")
 		os.MkdirAll(logsDir, 0755)
 		logPath := filepath.Join(logsDir, "verify.jsonl")
-		os.WriteFile(logPath, out, 0644)
+		if f, ferr := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); ferr == nil {
+			f.WriteString(string(lineJSON) + "\n")
+			f.Close()
+		}
 
 		if result.Failed > 0 {
 			os.Exit(1)

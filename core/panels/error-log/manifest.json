@@ -1,0 +1,16 @@
+{
+  "id": "error-log",
+  "contractVersion": "1.0",
+  "name": "Error Log",
+  "description": "Recent application errors and panics",
+  "version": "1.0.0",
+  "author": "core",
+  "position": 6,
+  "size": "full",
+  "refreshMs": 30000,
+  "requires": [],
+  "capabilities": ["fetch"],
+  "dataSchema": {
+    "type": "object"
+  }
+}

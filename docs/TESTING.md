@@ -246,12 +246,80 @@ If you're an AI agent building or deploying a Vel app:
 
 ---
 
+## Continuous Monitoring
+
+For production deployments, run `vel verify` on a schedule so failures are caught automatically — not by the user.
+
+### `verify-cron.sh`
+
+Vel ships a cron script at `sdk/vel/verify-cron.sh`:
+
+```bash
+# Run every 15 minutes — adjust path to your vel install
+*/15 * * * * /opt/vel/sdk/vel/verify-cron.sh
+```
+
+**What it does:**
+1. Runs `./vel verify --json` (appends one JSONL line to `logs/verify.jsonl`)
+2. On failure: POSTs a wake notification to the local OpenClaw gateway
+3. The agent receives the notification, reads the failure details, and can fix + re-deploy
+
+**Setup:**
+1. Build the vel binary: `go run . build`
+2. Add your `OPENCLAW_GATEWAY_TOKEN` to `.env`
+3. Add the crontab entry above (adjust path as needed)
+4. Verify the script is executable: `chmod +x sdk/vel/verify-cron.sh`
+
+### Dashboard panels
+
+The Velboard dashboard includes two monitoring panels (both in `core/panels/`):
+
+**Verify Status panel** (`verify-status`)
+- Shows the latest verify result: pass/fail, timestamp, check counts
+- Lists failed checks with name, detail, and hint — ready for the agent to act on
+- Displays last 10 runs as green/red dots (quick visual health history)
+- Refreshes every 60 seconds
+
+**Error Log panel** (`error-log`)
+- Shows all logged errors from `logs/error.jsonl`
+- Count badge shows errors in last 24h
+- Each error shows: timestamp, HTTP method, path, status code, message
+- Stack traces from panics are collapsible (click to expand)
+- Color-coded: 5xx in red, 4xx in orange
+- Summary line: "X errors in last hour, Y in last 24h"
+- Refreshes every 30 seconds
+
+### The OpenClaw wake hook
+
+When `verify-cron.sh` detects a failure, it calls:
+
+```
+POST http://localhost:18789/__openclaw__/api/cron/wake
+Authorization: Bearer <OPENCLAW_GATEWAY_TOKEN>
+Content-Type: application/json
+
+{"text": "vel verify cron check FAILED. Latest result: {...}"}
+```
+
+This wakes the AI agent with the full verify result. The agent can:
+1. Read the failure details and hint from the verify result
+2. Fix the root cause (edit config, add missing file, etc.)
+3. Rebuild: `go run . build`
+4. Re-run `vel verify --json` to confirm the fix
+5. Commit and push
+
+**The goal:** broken deployments get fixed before the user notices.
+
+---
+
 ## Summary
 
 ```
 vel test   → "Does my code work?"     → Run in development + CI
 vel verify → "Does my deployment work?" → Run after every deploy
+verify-cron.sh → "Is it still working?" → Run every 15 minutes in production
 
 Tests catch bugs. Verify catches broken deployments.
+Continuous monitoring catches regressions.
 Together, they guarantee: if it's deployed and verified, it works.
 ```

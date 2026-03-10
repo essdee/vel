@@ -844,6 +844,66 @@ func NewServer(cfg *Config) http.Handler {
 		writeJSON(w, result)
 	})
 
+	// Verify status API — reads logs/verify.jsonl and returns latest + history (auth-protected).
+	mux.HandleFunc("/api/verify-status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		user := auth.Check(r)
+		if user == nil || auth.IsScopedUser(user) {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+
+		logPath := filepath.Join(cfg.RootDir, "logs", "verify.jsonl")
+		fileData, err := os.ReadFile(logPath)
+		if err != nil {
+			// File doesn't exist yet — return empty history
+			writeJSON(w, map[string]interface{}{
+				"latest":  nil,
+				"history": []interface{}{},
+				"healthy": true,
+			})
+			return
+		}
+
+		// Parse JSONL lines
+		rawLines := strings.Split(strings.TrimSpace(string(fileData)), "\n")
+		var history []json.RawMessage
+		for _, line := range rawLines {
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+			history = append(history, json.RawMessage(line))
+		}
+
+		// Keep last 20
+		if len(history) > 20 {
+			history = history[len(history)-20:]
+		}
+
+		var latest json.RawMessage
+		healthy := true
+		if len(history) > 0 {
+			latest = history[len(history)-1]
+			var latestObj map[string]interface{}
+			if json.Unmarshal(latest, &latestObj) == nil {
+				if status, ok := latestObj["status"].(string); ok && status != "ok" {
+					healthy = false
+				}
+			}
+		}
+
+		writeJSON(w, map[string]interface{}{
+			"latest":  latest,
+			"history": history,
+			"healthy": healthy,
+		})
+	})
+
 	// Error log API — returns recent error log entries (auth-protected).
 	mux.HandleFunc("/api/errors", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "GET" {
