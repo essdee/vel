@@ -181,7 +181,8 @@ func isPublicPath(path string) bool {
 	// Prefix matches
 	if strings.HasPrefix(path, "/public/") ||
 		strings.HasPrefix(path, "/core/vendor/") ||
-		strings.HasPrefix(path, "/custom/theme/") {
+		strings.HasPrefix(path, "/custom/theme/") ||
+		strings.HasPrefix(path, "/relay/") {
 		return true
 	}
 	return false

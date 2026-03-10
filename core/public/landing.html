@@ -234,37 +234,8 @@
         document.title = cfg.name + (cfg.emoji ? ' ' + cfg.emoji : '');
       }
 
-      // Auth mode
-      const authMode = cfg.authMode || 'telegram';
-
-      if (authMode === 'none') {
-        document.getElementById('tg-login-placeholder').textContent = '';
-        window.location.href = '/dashboard';
-      } else if (authMode === 'token') {
-        document.getElementById('tg-login-area').classList.add('hidden');
-        document.getElementById('token-login-area').classList.remove('hidden');
-        document.getElementById('token-login-form').addEventListener('submit', function(e) {
-          e.preventDefault();
-          const token = document.getElementById('token-input').value;
-          fetch('/auth/token', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({token: token})
-          }).then(r => r.json()).then(res => {
-            if (res.ok) {
-              window.location.href = '/dashboard';
-            } else {
-              const err = document.getElementById('token-error');
-              err.textContent = 'Invalid token';
-              err.classList.remove('hidden');
-            }
-          }).catch(() => {
-            const err = document.getElementById('token-error');
-            err.textContent = 'Login failed';
-            err.classList.remove('hidden');
-          });
-        });
-      } else if (cfg.botUsername && cfg.authUrl) {
+      // Auth — session-based, redirect to /login for authentication
+      if (cfg.botUsername && cfg.authUrl) {
         // Telegram login widget
         const loginArea = document.getElementById('tg-login-area');
         const script = document.createElement('script');
