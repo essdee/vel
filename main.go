@@ -752,10 +752,70 @@ func runStart(args []string) {
 		allowedUsers = config.AllowedUsers
 	}
 
-	// Init auth
+	// Init legacy auth (kept for backward compat during transition)
 	auth.Init(botToken, allowedUsers, strings.TrimSpace(string(cookieSecret)))
 	auth.InitMode(authMode, config.Auth.Token)
 	auth.InitScopedTokens(config.Auth.Tokens)
+
+	// Init new auth system (Phase 2)
+	usersPath := filepath.Join(rootDir, "users.json")
+	var authManager *auth.AuthManager
+
+	// Run migration if needed
+	if err := auth.MigrateIfNeeded(configPath, usersPath); err != nil {
+		fmt.Printf("[Auth] Migration warning: %v\n", err)
+	}
+
+	if _, err := os.Stat(usersPath); err == nil {
+		userStore, err := auth.NewUserStore(usersPath)
+		if err != nil {
+			log.Printf("[Auth] WARNING: Failed to load users.json: %v (falling back to legacy auth)", err)
+		} else {
+			// Open bbolt session store
+			dataDir := filepath.Join(rootDir, "data")
+			os.MkdirAll(dataDir, 0755)
+			sessStore, err := auth.NewBoltSessionStore(filepath.Join(dataDir, "sessions.db"))
+			if err != nil {
+				log.Printf("[Auth] WARNING: Failed to open session store: %v (falling back to legacy auth)", err)
+				userStore.Stop()
+			} else {
+				authManager = auth.NewAuthManager(userStore, sessStore, auth.AuthManagerConfig{
+					MaxAgeHours: 168, // 7 days
+					CookieName:  "vel_session",
+				})
+
+				// Register providers
+				if botToken != "" {
+					authManager.RegisterProvider(auth.NewTelegramProvider(botToken, userStore))
+					fmt.Println("[Auth] Registered provider: telegram")
+				}
+				authManager.RegisterProvider(auth.NewAPIKeyProvider(userStore))
+				fmt.Println("[Auth] Registered provider: api_key")
+				fmt.Println("[Auth] New auth system active (session-based)")
+
+				// Start periodic session cleanup
+				go func() {
+					ticker := time.NewTicker(1 * time.Hour)
+					defer ticker.Stop()
+					for range ticker.C {
+						if err := authManager.Cleanup(); err != nil {
+							log.Printf("[Auth] Session cleanup error: %v", err)
+						}
+					}
+				}()
+
+				// Print deprecation warnings for old config fields
+				if config.Auth.Mode != "" {
+					fmt.Println("⚠  Deprecated: auth.mode in config.json — now using users.json + session-based auth")
+				}
+				if config.Auth.Token != "" {
+					fmt.Println("⚠  Deprecated: auth.token in config.json — use API keys via users.json instead")
+				}
+			}
+		}
+	} else {
+		fmt.Println("[Auth] No users.json found — using legacy auth system")
+	}
 
 	// Port: flag > env PORT > config.server.port > config.port > 3700
 	port := *portFlag
@@ -945,6 +1005,7 @@ func runStart(args []string) {
 		Apps:         discoveredApps,
 		Hooks:        hookEngine,
 		DSManager:    dsManager,
+		AuthManager:  authManager,
 	}
 
 	handler := server.NewServer(cfg)

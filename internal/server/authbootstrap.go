@@ -16,6 +16,7 @@ const authBootstrapScript = `<script>
 (function(){
   var tg = window.Telegram && window.Telegram.WebApp;
   if (!tg || !tg.initData) return;
+  if (document.cookie.indexOf('vel_session=') !== -1) return;
   if (document.cookie.indexOf('tg_user=') !== -1) return;
   if (sessionStorage.getItem('_vel_auth_tried')) return;
   sessionStorage.setItem('_vel_auth_tried', '1');

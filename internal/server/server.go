@@ -484,8 +484,7 @@ func NewServer(cfg *Config) http.Handler {
 
 	// Scoped tokens API
 	mux.HandleFunc("/api/tokens", func(w http.ResponseWriter, r *http.Request) {
-		user := auth.Check(r)
-		if user == nil || auth.IsScopedUser(user) {
+		if !checkAuthNotScoped(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -572,8 +571,7 @@ func NewServer(cfg *Config) http.Handler {
 			http.Error(w, "Method not allowed", 405)
 			return
 		}
-		user := auth.Check(r)
-		if user == nil {
+		if !checkAuth(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -604,8 +602,7 @@ func NewServer(cfg *Config) http.Handler {
 			http.Error(w, "Method not allowed", 405)
 			return
 		}
-		user := auth.Check(r)
-		if user == nil {
+		if !checkAuth(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -669,28 +666,57 @@ func NewServer(cfg *Config) http.Handler {
 			return
 		}
 		userID, _ := strconv.ParseInt(params["id"], 10, 64)
-		if !auth.IsAllowed(userID) {
-			http.Error(w, "Access denied", 403)
-			return
+
+		redirect := "/dashboard"
+
+		if cfg.AuthManager != nil {
+			// New auth: look up user and create session
+			providerID := strconv.FormatInt(userID, 10)
+			record := cfg.AuthManager.UserStore().FindUserByIdentity("telegram", providerID)
+			if record == nil {
+				http.Error(w, "Access denied", 403)
+				return
+			}
+			identity := &auth.Identity{
+				UserID:   record.ID,
+				Name:     record.Name,
+				Provider: "telegram",
+				Role:     record.Role,
+				Meta: map[string]string{
+					"telegram_id":       providerID,
+					"telegram_name":     params["first_name"],
+					"telegram_username": params["username"],
+				},
+			}
+			sess, err := cfg.AuthManager.CreateSession(identity)
+			if err != nil {
+				http.Error(w, "Session creation failed", 500)
+				return
+			}
+			setSessionCookie(w, cfg.AuthManager, sess.ID)
+		} else {
+			// Legacy
+			if !auth.IsAllowed(userID) {
+				http.Error(w, "Access denied", 403)
+				return
+			}
+			userInfo, _ := json.Marshal(map[string]interface{}{
+				"id":         userID,
+				"first_name": params["first_name"],
+				"username":   params["username"],
+			})
+			signed := auth.SignCookie(string(userInfo))
+			http.SetCookie(w, &http.Cookie{
+				Name:     "tg_user",
+				Value:    signed,
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteNoneMode,
+				MaxAge:   7 * 24 * 60 * 60,
+				Path:     "/",
+			})
 		}
-
-		userInfo, _ := json.Marshal(map[string]interface{}{
-			"id":         userID,
-			"first_name": params["first_name"],
-			"username":   params["username"],
-		})
-
-		signed := auth.SignCookie(string(userInfo))
-		http.SetCookie(w, &http.Cookie{
-			Name:     "tg_user",
-			Value:    signed,
-			HttpOnly: true,
-			Secure:   true,
-			SameSite: http.SameSiteNoneMode,
-			MaxAge:   7 * 24 * 60 * 60,
-			Path:     "/",
-		})
-		http.Redirect(w, r, "/dashboard", http.StatusFound)
+		http.Redirect(w, r, redirect, http.StatusFound)
 	})
 
 	// Token auth login
@@ -755,6 +781,15 @@ func NewServer(cfg *Config) http.Handler {
 	})
 
 	mux.HandleFunc("/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.AuthManager != nil {
+			// Destroy session
+			sess, err := cfg.AuthManager.GetSession(r)
+			if err == nil && sess != nil {
+				cfg.AuthManager.DestroySession(sess.ID)
+			}
+			clearSessionCookie(w, cfg.AuthManager)
+		}
+		// Also clear legacy cookie for backward compat
 		http.SetCookie(w, &http.Cookie{
 			Name:   "tg_user",
 			Value:  "",
@@ -766,8 +801,7 @@ func NewServer(cfg *Config) http.Handler {
 
 	// Data sources API
 	mux.HandleFunc("/api/sources", func(w http.ResponseWriter, r *http.Request) {
-		user := auth.Check(r)
-		if user == nil {
+		if !checkAuth(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -780,8 +814,7 @@ func NewServer(cfg *Config) http.Handler {
 	})
 
 	mux.HandleFunc("/api/source/", func(w http.ResponseWriter, r *http.Request) {
-		user := auth.Check(r)
-		if user == nil {
+		if !checkAuth(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -805,8 +838,7 @@ func NewServer(cfg *Config) http.Handler {
 			http.Error(w, "Method not allowed", 405)
 			return
 		}
-		user := auth.Check(r)
-		if user == nil {
+		if !checkAuth(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -823,8 +855,7 @@ func NewServer(cfg *Config) http.Handler {
 			http.Error(w, "Method not allowed", 405)
 			return
 		}
-		user := auth.Check(r)
-		if user == nil {
+		if !checkAuth(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -862,8 +893,7 @@ func NewServer(cfg *Config) http.Handler {
 			http.Error(w, "Method not allowed", 405)
 			return
 		}
-		user := auth.Check(r)
-		if user == nil || auth.IsScopedUser(user) {
+		if !checkAuthNotScoped(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -909,8 +939,7 @@ func NewServer(cfg *Config) http.Handler {
 			http.Error(w, "Method not allowed", 405)
 			return
 		}
-		user := auth.Check(r)
-		if user == nil || auth.IsScopedUser(user) {
+		if !checkAuthNotScoped(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -969,8 +998,7 @@ func NewServer(cfg *Config) http.Handler {
 			http.Error(w, "Method not allowed", 405)
 			return
 		}
-		user := auth.Check(r)
-		if user == nil || auth.IsScopedUser(user) {
+		if !checkAuthNotScoped(r, cfg) {
 			w.WriteHeader(403)
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
@@ -994,6 +1022,16 @@ func NewServer(cfg *Config) http.Handler {
 		})
 	})
 
+	// Login page
+	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "login.html"))
+	})
+	mux.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "login.html"))
+	})
+
 	// WebSocket
 	mux.HandleFunc("/ws/metrics", func(w http.ResponseWriter, r *http.Request) {
 		handleWebSocket(w, r, cfg)
@@ -1005,8 +1043,20 @@ func NewServer(cfg *Config) http.Handler {
 		fmt.Println("[Server] Pre-warmed openclaw-status cache")
 	}()
 
-	// Wrap with middleware: recovery (outermost) → security/gzip → mux.
-	return recoveryMiddleware(applyMiddleware(mux), cfg)
+	// Build handler chain
+	var handler http.Handler = mux
+
+	// Apply auth middleware if AuthManager is configured
+	// Execution order: SessionMiddleware (check cookie) → AuthMiddleware (try providers) → handler
+	// SessionMiddleware is outermost so it runs first.
+	if cfg.AuthManager != nil {
+		handler = RequireAuthPaths(handler)
+		handler = AuthMiddleware(cfg.AuthManager)(handler)
+		handler = SessionMiddleware(cfg.AuthManager)(handler)
+	}
+
+	// Wrap with middleware: recovery (outermost) → security/gzip → auth → mux.
+	return recoveryMiddleware(applyMiddleware(handler), cfg)
 }
 
 // checkAuth checks authentication using the new AuthManager if available,

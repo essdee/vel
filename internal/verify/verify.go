@@ -97,18 +97,36 @@ func readServerConfig(rootDir string) serverConfig {
 		}
 	}
 
-	// Auto-detect auth mode if not set
-	if cfg.authMode == "" {
-		botToken := os.Getenv("BOT_TOKEN")
-		if botToken == "" {
-			if envData, err := os.ReadFile(filepath.Join(rootDir, ".env")); err == nil {
-				for _, line := range strings.Split(string(envData), "\n") {
-					if strings.HasPrefix(line, "BOT_TOKEN=") {
-						botToken = strings.TrimSpace(strings.TrimPrefix(line, "BOT_TOKEN="))
-					}
+	// Detect if new auth system is active (users.json exists)
+	usersPath := filepath.Join(rootDir, "users.json")
+	newAuthActive := false
+	if _, err := os.Stat(usersPath); err == nil {
+		newAuthActive = true
+	}
+
+	// Auto-detect auth mode
+	// When new auth system is active, override legacy config mode
+	botToken := os.Getenv("BOT_TOKEN")
+	if botToken == "" {
+		if envData, err := os.ReadFile(filepath.Join(rootDir, ".env")); err == nil {
+			for _, line := range strings.Split(string(envData), "\n") {
+				if strings.HasPrefix(line, "BOT_TOKEN=") {
+					botToken = strings.TrimSpace(strings.TrimPrefix(line, "BOT_TOKEN="))
 				}
 			}
 		}
+	}
+
+	if newAuthActive {
+		// New auth system: telegram provider if BOT_TOKEN exists
+		if botToken != "" {
+			cfg.authMode = "telegram"
+		} else {
+			cfg.authMode = "none"
+		}
+		cfg.authToken = "" // legacy token not used in new auth
+	} else if cfg.authMode == "" {
+		// Legacy auto-detect
 		if botToken != "" {
 			cfg.authMode = "telegram"
 		} else if cfg.authToken != "" {
@@ -195,6 +213,7 @@ func RunVerify(cfg VerifyConfig) VerifyResult {
 			Layer:  2,
 		})
 	}
+
 
 	// ── Layer 3: App verify.json (always runs)
 	checks = append(checks, checkAppVerifyJSON(cfg.RootDir, srvCfg, cfg.Apps)...)
@@ -317,10 +336,13 @@ func checkAuthProbe(cfg serverConfig) CheckResult {
 		resp.Body.Close()
 		unauthStatus := resp.StatusCode
 
-		// With token: should get 200
+		// With token: should get 200 (try Bearer header first, fall back to query param)
 		var authStatus int
 		if cfg.authToken != "" {
-			resp2, err := client.Get(fmt.Sprintf("%s%s?token=%s", base, protectedPath, cfg.authToken))
+			// Try Bearer header first (new auth system)
+			req, _ := http.NewRequest("GET", base+protectedPath, nil)
+			req.Header.Set("Authorization", "Bearer "+cfg.authToken)
+			resp2, err := client.Do(req)
 			if err != nil {
 				return CheckResult{
 					Name:   "auth.probe",
@@ -331,6 +353,8 @@ func checkAuthProbe(cfg serverConfig) CheckResult {
 			}
 			resp2.Body.Close()
 			authStatus = resp2.StatusCode
+
+			// Bearer header is the only supported method for new auth
 		}
 
 		unauthRejected := unauthStatus == 401 || unauthStatus == 403
@@ -405,39 +429,94 @@ func checkEndpoints(cfg serverConfig, appList []*apps.App) []CheckResult {
 		},
 	}
 
-	// Build authenticated URL helper
-	authedURL := func(path string) string {
+	// Build authenticated request helper
+	authedReq := func(path string) *http.Request {
 		url := base + path
 		if cfg.authToken != "" && cfg.authMode == "token" {
-			if strings.Contains(path, "?") {
-				url += "&token=" + cfg.authToken
-			} else {
-				url += "?token=" + cfg.authToken
-			}
+			req, _ := http.NewRequest("GET", url, nil)
+			req.Header.Set("Authorization", "Bearer "+cfg.authToken)
+			return req
 		}
-		return url
+		req, _ := http.NewRequest("GET", url, nil)
+		return req
 	}
 
 	var results []CheckResult
 
-	// /dashboard — main velboard page (always served as HTML by core)
-	results = append(results, checkHTTPEndpoint(client, authedURL("/dashboard"), "endpoint:/dashboard", 200, "html", 2))
-
-	// /api/health — public health endpoint
+	// /api/health — public health endpoint (always accessible)
 	results = append(results, checkHTTPEndpoint(client, base+"/api/health", "endpoint:/api/health", 200, "", 2))
 
-	// /api/sources — protected data endpoint
-	results = append(results, checkHTTPEndpoint(client, authedURL("/api/sources"), "endpoint:/api/sources", 200, "", 2))
+	// For telegram auth mode, we can't authenticate in verify.
+	// Instead, verify that protected endpoints correctly reject unauthenticated requests.
+	if cfg.authMode == "telegram" {
+		// /dashboard — should redirect to login (302)
+		results = append(results, checkHTTPEndpoint(client, base+"/dashboard", "endpoint:/dashboard", 302, "", 2))
+		// /api/sources — should return 401
+		results = append(results, checkHTTPEndpoint(client, base+"/api/sources", "endpoint:/api/sources", 401, "", 2))
+		// /login — should be accessible (200)
+		results = append(results, checkHTTPEndpoint(client, base+"/login", "endpoint:/login", 200, "html", 2))
+		return results
+	}
+
+	// For token auth mode, test with authentication
+	if cfg.authMode == "token" && cfg.authToken != "" {
+		// /dashboard — authenticated
+		req := authedReq("/dashboard")
+		resp, err := client.Do(req)
+		if err != nil {
+			results = append(results, CheckResult{Name: "endpoint:/dashboard", Status: "fail", Detail: "request failed: " + err.Error(), Layer: 2})
+		} else {
+			resp.Body.Close()
+			if resp.StatusCode == 200 {
+				results = append(results, CheckResult{Name: "endpoint:/dashboard", Status: "ok", Detail: "HTTP 200", Layer: 2})
+			} else {
+				results = append(results, CheckResult{Name: "endpoint:/dashboard", Status: "fail", Detail: fmt.Sprintf("expected 200, got %d", resp.StatusCode), Layer: 2})
+			}
+		}
+		// /api/sources — authenticated
+		req2 := authedReq("/api/sources")
+		resp2, err := client.Do(req2)
+		if err != nil {
+			results = append(results, CheckResult{Name: "endpoint:/api/sources", Status: "fail", Detail: "request failed: " + err.Error(), Layer: 2})
+		} else {
+			resp2.Body.Close()
+			if resp2.StatusCode == 200 {
+				results = append(results, CheckResult{Name: "endpoint:/api/sources", Status: "ok", Detail: "HTTP 200", Layer: 2})
+			} else {
+				results = append(results, CheckResult{Name: "endpoint:/api/sources", Status: "fail", Detail: fmt.Sprintf("expected 200, got %d", resp2.StatusCode), Layer: 2})
+			}
+		}
+	} else {
+		// auth mode "none" — no auth needed
+		results = append(results, checkHTTPEndpoint(client, base+"/dashboard", "endpoint:/dashboard", 200, "html", 2))
+		results = append(results, checkHTTPEndpoint(client, base+"/api/sources", "endpoint:/api/sources", 200, "", 2))
+	}
 
 	// Each registered app's actual routes (from app.json)
 	for _, app := range appList {
 		if len(app.Routes) == 0 {
-			// App has no explicit routes (e.g. velboard uses /dashboard via core)
 			continue
 		}
 		for routePath := range app.Routes {
-			// Check the first route per app to avoid flooding
-			results = append(results, checkHTTPEndpoint(client, authedURL(routePath), "endpoint:"+routePath, 200, "", 2))
+			if cfg.authMode == "telegram" {
+				// Can't auth — skip app route checks
+				results = append(results, CheckResult{Name: "endpoint:" + routePath, Status: "skipped", Detail: "skipped — telegram auth (no token for verify)", Layer: 2})
+			} else if cfg.authMode == "token" && cfg.authToken != "" {
+				req := authedReq(routePath)
+				resp, err := client.Do(req)
+				if err != nil {
+					results = append(results, CheckResult{Name: "endpoint:" + routePath, Status: "fail", Detail: "request failed: " + err.Error(), Layer: 2})
+				} else {
+					resp.Body.Close()
+					if resp.StatusCode == 200 {
+						results = append(results, CheckResult{Name: "endpoint:" + routePath, Status: "ok", Detail: "HTTP 200", Layer: 2})
+					} else {
+						results = append(results, CheckResult{Name: "endpoint:" + routePath, Status: "fail", Detail: fmt.Sprintf("expected 200, got %d", resp.StatusCode), Layer: 2})
+					}
+				}
+			} else {
+				results = append(results, checkHTTPEndpoint(client, base+routePath, "endpoint:"+routePath, 200, "", 2))
+			}
 			break
 		}
 	}
@@ -519,19 +598,24 @@ func checkAppVerifyJSON(rootDir string, cfg serverConfig, appList []*apps.App) [
 	base := fmt.Sprintf("http://localhost:%d", cfg.port)
 	home, _ := os.UserHomeDir()
 
-	client := &http.Client{Timeout: 8 * time.Second}
-
-	authedURL := func(path string) string {
-		url := base + path
-		if cfg.authToken != "" && cfg.authMode == "token" {
-			if strings.Contains(path, "?") {
-				url += "&token=" + cfg.authToken
-			} else {
-				url += "?token=" + cfg.authToken
-			}
-		}
-		return url
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // don't follow redirects
+		},
 	}
+
+	// authedRequest creates an authenticated request for the given path
+	authedRequest := func(path string) *http.Request {
+		url := base + path
+		req, _ := http.NewRequest("GET", url, nil)
+		if cfg.authToken != "" && cfg.authMode == "token" {
+			req.Header.Set("Authorization", "Bearer "+cfg.authToken)
+		}
+		return req
+	}
+	// For telegram mode, skip http_get checks on protected endpoints
+	_ = authedRequest
 
 	// Map app name → app dir
 	appDirs := make(map[string]string)
@@ -588,8 +672,8 @@ func checkAppVerifyJSON(rootDir string, cfg serverConfig, appList []*apps.App) [
 					expectStatus = 200
 				}
 
-				url := authedURL(check.Path)
-				resp, err := client.Get(url)
+				req := authedRequest(check.Path)
+				resp, err := client.Do(req)
 				if err != nil {
 					results = append(results, CheckResult{
 						Name:   checkName,

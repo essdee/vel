@@ -34,6 +34,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 	authenticated := false
 	done := make(chan struct{})
 
+	// Check if already authenticated via session middleware (cookie sent with WS upgrade)
+	if cfg.AuthManager != nil {
+		identity := GetIdentity(r)
+		if identity != nil {
+			authenticated = true
+		}
+	}
+
 	// Auth timeout
 	go func() {
 		time.Sleep(10 * time.Second)
@@ -42,7 +50,38 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 		}
 	}()
 
-	// Read auth message
+	// If pre-authenticated via session cookie, skip auth handshake
+	if authenticated {
+		// Still need to read the auth message from the client (they send it)
+		// but we can respond immediately and proceed
+		go func() {
+			for {
+				_, msg, err := conn.ReadMessage()
+				if err != nil {
+					close(done)
+					return
+				}
+				var authMsg wsAuthMsg
+				if json.Unmarshal(msg, &authMsg) == nil && authMsg.Type == "auth" {
+					// Already authenticated, just confirm
+					conn.WriteJSON(map[string]interface{}{"type": "auth", "ok": true})
+					// Keep reading to detect close
+					for {
+						if _, _, err := conn.ReadMessage(); err != nil {
+							close(done)
+							return
+						}
+					}
+				}
+			}
+		}()
+
+		// Start broadcasting immediately
+		broadcastMetrics(conn, cfg, done)
+		return
+	}
+
+	// Read auth message (legacy path or new provider-based)
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
@@ -58,171 +97,51 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 			continue
 		}
 
-		var user *auth.User
-		if authMsg.InitData != "" {
-			user = auth.ValidateInitData(authMsg.InitData)
-		} else if authMsg.CookieAuth && authMsg.User != nil {
-			user = authMsg.User
+		// Try new auth system first
+		if cfg.AuthManager != nil && authMsg.InitData != "" {
+			tgProvider := cfg.AuthManager.GetProvider("telegram")
+			if tgProvider != nil {
+				creds := auth.TelegramCredentials{InitData: authMsg.InitData}
+				if _, authErr := tgProvider.Authenticate(creds); authErr == nil {
+					authenticated = true
+				}
+			}
 		}
 
-		// TEST_MODE bypass
-		if auth.IsTestMode() {
-			user = &auth.User{ID: 0, FirstName: "Test"}
+		// Legacy fallback
+		if !authenticated {
+			var user *auth.User
+			if authMsg.InitData != "" {
+				user = auth.ValidateInitData(authMsg.InitData)
+			} else if authMsg.CookieAuth && authMsg.User != nil {
+				user = authMsg.User
+			}
+
+			// TEST_MODE bypass
+			if auth.IsTestMode() {
+				user = &auth.User{ID: 0, FirstName: "Test"}
+			}
+
+			// "none" mode bypass
+			if auth.GetAuthMode() == "none" && user == nil {
+				user = &auth.User{ID: 1, FirstName: "Admin", Username: "admin"}
+			}
+
+			if user != nil && auth.IsAllowed(user.ID) {
+				authenticated = true
+			}
 		}
 
-		// "none" mode bypass
-		if auth.GetAuthMode() == "none" && user == nil {
-			user = &auth.User{ID: 1, FirstName: "Admin", Username: "admin"}
-		}
-
-		if user == nil || !auth.IsAllowed(user.ID) {
+		if !authenticated {
 			conn.WriteJSON(map[string]interface{}{"type": "auth", "ok": false})
 			conn.Close()
 			return
 		}
 
-		authenticated = true
 		conn.WriteJSON(map[string]interface{}{"type": "auth", "ok": true})
 
 		// Start broadcasting
-		go func() {
-			ticker := time.NewTicker(2 * time.Second)
-			defer ticker.Stop()
-
-			sendMetrics := func() {
-				tTotal := time.Now()
-				t0 := time.Now()
-				metrics, err := data.GetSystemMetrics()
-				if err != nil {
-					return
-				}
-				log.Printf("[ws] GetSystemMetrics: %v", time.Since(t0))
-
-				// Build raw data for all known panel IDs (hardcoded sources)
-				rawData := make(map[string]interface{})
-				for id, info := range cfg.Registry.Entries() {
-					if info.Manifest == nil {
-						continue
-					}
-					switch id {
-					case "cpu":
-						if metrics.CPU != nil {
-							rawData["cpu"] = metrics.CPU
-						}
-					case "memory":
-						if metrics.Memory != nil {
-							rawData["memory"] = metrics.Memory
-						}
-					case "disk":
-						if metrics.Disk != nil {
-							rawData["disk"] = metrics.Disk
-						}
-					case "uptime":
-						rawData["uptime"] = map[string]interface{}{"uptime": metrics.Uptime, "hostname": metrics.Hostname}
-					case "processes":
-						if metrics.Processes != nil {
-							rawData["processes"] = map[string]interface{}{
-								"total": metrics.Processes.Total, "running": metrics.Processes.Running,
-								"sleeping": metrics.Processes.Sleeping, "os": metrics.OS,
-							}
-						}
-					case "claude-usage":
-						rawData["claude-usage"] = data.GetUsageData(cfg.Workspace)
-					case "crons":
-						rawData["crons"] = json.RawMessage(data.GetCronJobs(cfg.Workspace))
-					case "models":
-						rawData["models"] = json.RawMessage(data.GetAgentInfo(cfg.Workspace))
-					case "openclaw-status":
-						if cached := data.GetSystemStatusCached(); cached != nil {
-							rawData["openclaw-status"] = json.RawMessage(cached)
-						}
-					case "_test":
-						rawData["_test"] = map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()}
-					}
-				}
-
-				// Add data source data (file-based sources)
-				if cfg.DSManager != nil {
-					for key, state := range cfg.DSManager.GetAllData() {
-						if _, exists := rawData[key]; !exists {
-							rawData[key] = state.Data
-						}
-						// Also add under short name (strip "appname:" prefix) for panel matching
-						if idx := strings.Index(key, ":"); idx >= 0 {
-							short := key[idx+1:]
-							if _, exists := rawData[short]; !exists {
-								rawData[short] = state.Data
-							}
-						}
-					}
-				}
-
-				// Build per-panel data, respecting dataSource subscription and dataEnvelope
-				panelData := make(map[string]interface{})
-				for id, info := range cfg.Registry.Entries() {
-					if info.Manifest == nil {
-						continue
-					}
-					m := info.Manifest
-
-					// Determine which data key this panel consumes
-					dataKey := id
-					if m.DataSource != "" {
-						dataKey = m.DataSource
-					}
-
-					d, exists := rawData[dataKey]
-					if !exists {
-						continue
-					}
-
-					// If panel wants full envelope and data comes from a managed source
-					if m.DataEnvelope && cfg.DSManager != nil {
-						state := cfg.DSManager.GetSourceState(dataKey)
-						if state != nil {
-							panelData[id] = map[string]interface{}{
-								"ok":         state.OK,
-								"stale":      state.Stale,
-								"staleSince": state.StaleSince,
-								"data":       state.Data,
-							}
-							continue
-						}
-					}
-
-					panelData[id] = d
-				}
-
-				msg := map[string]interface{}{
-					"type":   "metrics",
-					"data":   metrics,
-					"usage":  data.GetUsageData(cfg.Workspace),
-					"agent":  json.RawMessage(data.GetAgentInfo(cfg.Workspace)),
-					"crons":  json.RawMessage(data.GetCronJobs(cfg.Workspace)),
-					"panels": panelData,
-				}
-
-				// Add source status metadata
-				if cfg.DSManager != nil {
-					msg["_sourceStatus"] = cfg.DSManager.GetStatus()
-				}
-
-				log.Printf("[ws] sendMetrics total: %v", time.Since(tTotal))
-				if err := conn.WriteJSON(msg); err != nil {
-					return
-				}
-			}
-
-			sendMetrics()
-			for {
-				select {
-				case <-ticker.C:
-					sendMetrics()
-				case <-done:
-					return
-				}
-			}
-		}()
+		go broadcastMetrics(conn, cfg, done)
 
 		// Keep reading to detect close
 		for {
@@ -230,6 +149,146 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
 				close(done)
 				return
 			}
+		}
+	}
+}
+
+// broadcastMetrics sends metrics to a WebSocket connection every 2 seconds.
+func broadcastMetrics(conn *websocket.Conn, cfg *Config, done chan struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	sendMetrics := func() {
+		tTotal := time.Now()
+		t0 := time.Now()
+		metrics, err := data.GetSystemMetrics()
+		if err != nil {
+			return
+		}
+		log.Printf("[ws] GetSystemMetrics: %v", time.Since(t0))
+
+		// Build raw data for all known panel IDs (hardcoded sources)
+		rawData := make(map[string]interface{})
+		for id, info := range cfg.Registry.Entries() {
+			if info.Manifest == nil {
+				continue
+			}
+			switch id {
+			case "cpu":
+				if metrics.CPU != nil {
+					rawData["cpu"] = metrics.CPU
+				}
+			case "memory":
+				if metrics.Memory != nil {
+					rawData["memory"] = metrics.Memory
+				}
+			case "disk":
+				if metrics.Disk != nil {
+					rawData["disk"] = metrics.Disk
+				}
+			case "uptime":
+				rawData["uptime"] = map[string]interface{}{"uptime": metrics.Uptime, "hostname": metrics.Hostname}
+			case "processes":
+				if metrics.Processes != nil {
+					rawData["processes"] = map[string]interface{}{
+						"total": metrics.Processes.Total, "running": metrics.Processes.Running,
+						"sleeping": metrics.Processes.Sleeping, "os": metrics.OS,
+					}
+				}
+			case "claude-usage":
+				rawData["claude-usage"] = data.GetUsageData(cfg.Workspace)
+			case "crons":
+				rawData["crons"] = json.RawMessage(data.GetCronJobs(cfg.Workspace))
+			case "models":
+				rawData["models"] = json.RawMessage(data.GetAgentInfo(cfg.Workspace))
+			case "openclaw-status":
+				if cached := data.GetSystemStatusCached(); cached != nil {
+					rawData["openclaw-status"] = json.RawMessage(cached)
+				}
+			case "_test":
+				rawData["_test"] = map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()}
+			}
+		}
+
+		// Add data source data (file-based sources)
+		if cfg.DSManager != nil {
+			for key, state := range cfg.DSManager.GetAllData() {
+				if _, exists := rawData[key]; !exists {
+					rawData[key] = state.Data
+				}
+				// Also add under short name (strip "appname:" prefix) for panel matching
+				if idx := strings.Index(key, ":"); idx >= 0 {
+					short := key[idx+1:]
+					if _, exists := rawData[short]; !exists {
+						rawData[short] = state.Data
+					}
+				}
+			}
+		}
+
+		// Build per-panel data, respecting dataSource subscription and dataEnvelope
+		panelData := make(map[string]interface{})
+		for id, info := range cfg.Registry.Entries() {
+			if info.Manifest == nil {
+				continue
+			}
+			m := info.Manifest
+
+			// Determine which data key this panel consumes
+			dataKey := id
+			if m.DataSource != "" {
+				dataKey = m.DataSource
+			}
+
+			d, exists := rawData[dataKey]
+			if !exists {
+				continue
+			}
+
+			// If panel wants full envelope and data comes from a managed source
+			if m.DataEnvelope && cfg.DSManager != nil {
+				state := cfg.DSManager.GetSourceState(dataKey)
+				if state != nil {
+					panelData[id] = map[string]interface{}{
+						"ok":         state.OK,
+						"stale":      state.Stale,
+						"staleSince": state.StaleSince,
+						"data":       state.Data,
+					}
+					continue
+				}
+			}
+
+			panelData[id] = d
+		}
+
+		msg := map[string]interface{}{
+			"type":   "metrics",
+			"data":   metrics,
+			"usage":  data.GetUsageData(cfg.Workspace),
+			"agent":  json.RawMessage(data.GetAgentInfo(cfg.Workspace)),
+			"crons":  json.RawMessage(data.GetCronJobs(cfg.Workspace)),
+			"panels": panelData,
+		}
+
+		// Add source status metadata
+		if cfg.DSManager != nil {
+			msg["_sourceStatus"] = cfg.DSManager.GetStatus()
+		}
+
+		log.Printf("[ws] sendMetrics total: %v", time.Since(tTotal))
+		if err := conn.WriteJSON(msg); err != nil {
+			return
+		}
+	}
+
+	sendMetrics()
+	for {
+		select {
+		case <-ticker.C:
+			sendMetrics()
+		case <-done:
+			return
 		}
 	}
 }

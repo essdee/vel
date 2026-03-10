@@ -168,6 +168,51 @@ func clearSessionCookie(w http.ResponseWriter, mgr *auth.AuthManager) {
 	})
 }
 
+// isPublicPath returns true for paths that don't require authentication.
+func isPublicPath(path string) bool {
+	// Exact matches
+	switch path {
+	case "/", "/login", "/auth/login", "/api/health", "/api/auth",
+		"/auth/magic", "/auth/telegram/callback", "/auth/token",
+		"/auth/dev", "/auth/logout", "/favicon.ico", "/robots.txt":
+		return true
+	}
+	// Prefix matches
+	if strings.HasPrefix(path, "/public/") ||
+		strings.HasPrefix(path, "/core/vendor/") ||
+		strings.HasPrefix(path, "/custom/theme/") {
+		return true
+	}
+	return false
+}
+
+// RequireAuthPaths is a middleware that enforces authentication on all paths
+// except those explicitly listed as public. For browser requests to protected
+// paths, it redirects to /login. For API requests, it returns 401.
+func RequireAuthPaths(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPublicPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if GetIdentity(r) == nil {
+			if isBrowserRequest(r) {
+				redirectPath := r.URL.Path
+				if r.URL.RawQuery != "" {
+					redirectPath += "?" + r.URL.RawQuery
+				}
+				http.Redirect(w, r, "/login?redirect="+redirectPath, http.StatusFound)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Write([]byte(`{"error":"Unauthorized"}`))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // isBrowserRequest checks if the request likely comes from a browser (not API).
 func isBrowserRequest(r *http.Request) bool {
 	accept := r.Header.Get("Accept")

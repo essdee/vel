@@ -125,20 +125,25 @@
     // ── Auth ──
     async function checkAuth() {
       try {
-        let opts;
-        if (browserMode) {
-          opts = { credentials: 'same-origin', headers: {} };
-          // Token auth: pass ?token= as Bearer header
-          const urlToken = new URLSearchParams(window.location.search).get('token');
-          if (urlToken) opts.headers['Authorization'] = 'Bearer ' + urlToken;
-        } else {
-          opts = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ initData }) };
+        // If inside Telegram Mini App and no session cookie, authenticate first
+        if (!browserMode && initData && !document.cookie.includes('vel_session=')) {
+          const authRes = await fetch('/api/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ initData })
+          });
+          if (!authRes.ok) { window.location.href = '/login'; return null; }
+          const authData = await authRes.json();
+          if (!authData.ok) { window.location.href = '/login'; return null; }
+          return authData;
         }
-        const res = await fetch('/api/auth', opts);
-        if (!res.ok) { window.location.href = '/'; return null; }
+
+        // Check existing session (cookie sent automatically)
+        const res = await fetch('/api/auth', { credentials: 'same-origin' });
+        if (!res.ok) { window.location.href = '/login'; return null; }
         return await res.json();
       } catch {
-        window.location.href = '/';
+        window.location.href = '/login';
         return null;
       }
     }
@@ -177,10 +182,8 @@
       const api = useMemo(() => ({
         fetch: async (url, opts) => {
           const fetchOpts = { ...opts, credentials: 'same-origin', headers: { ...opts?.headers } };
-          // Auth: cookie is always sent via credentials. Add Bearer for token mode.
-          const urlTk = new URLSearchParams(window.location.search).get('token');
-          if (urlTk) fetchOpts.headers = { ...fetchOpts.headers, 'Authorization': 'Bearer ' + urlTk };
-          // Telegram mode: send initData as header, not body — preserves original method & body
+          // Session cookie is sent automatically via credentials: 'same-origin'
+          // For Telegram Mini App, also send initData as fallback header
           if (!browserMode && initData) {
             fetchOpts.headers = { ...fetchOpts.headers, 'X-Telegram-Init-Data': initData };
           }
