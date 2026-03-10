@@ -4,6 +4,8 @@ plugins/
 config.json
 .env
 .cookie-secret
+users.json
+verify-log.json
 
 # Apps (standalone repos, cloned at install)
 apps/
