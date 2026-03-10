@@ -167,12 +167,102 @@ Apps without file-based data sources still get a `testdata/default/README.md` no
 
 ---
 
+## Authentication
+
+Vel uses **session-based, multi-provider auth** with users defined in `users.json`. See `docs/AUTH.md` for full details.
+
+### How it works
+
+1. **Users** are defined in `users.json` (in the vel root directory)
+2. **Providers** authenticate requests: Telegram (HMAC-SHA256), API Key (Bearer token), Magic Link (one-time URL)
+3. **Sessions** are stored server-side in bbolt (`data/sessions.db`), referenced by `vel_session` cookie
+4. **All routes are protected by default** — only explicitly public paths (like `/login`, `/api/health`, `/public/*`) skip auth
+
+### Getting auth context in handlers
+
+```go
+import "vel/internal/server"
+
+// Get the authenticated identity
+identity := server.GetIdentity(r)
+if identity != nil {
+    identity.UserID   // "karthi"
+    identity.Name     // "Karthikeyan"
+    identity.Role     // "admin", "user", "viewer"
+    identity.Provider // "telegram", "api_key", "magic_link"
+}
+
+// Legacy compatibility (still works)
+user := auth.Check(r)
+```
+
+### Middleware guards
+
+```go
+server.RequireAuth(handler)           // any authenticated user
+server.RequireAdmin(handler)          // admin role only
+server.RequireScope("GET /api/*")(handler)  // specific scope
+```
+
+### users.json format
+
+```json
+{
+  "users": [
+    {
+      "id": "karthi",
+      "name": "Karthikeyan",
+      "email": "karthi@essdee.fit",
+      "role": "admin",
+      "identities": [{"provider": "telegram", "provider_id": "85720317"}]
+    }
+  ],
+  "api_keys": [
+    {
+      "id": "usage-share",
+      "name": "usage-share",
+      "key_hash": "sha256:...",
+      "role": "viewer",
+      "scopes": ["GET /token-swap/api/usage"]
+    }
+  ]
+}
+```
+
+### CLI commands
+
+```bash
+vel auth create-key --name "my-key" --role viewer --scope "GET /api/data"
+vel auth list-keys
+vel auth revoke-key --id my-key
+vel auth magic-link --user karthi --expires 30
+vel auth list-users
+vel auth add-user --id vignesh --name "Vignesh" --role user --telegram 37211163
+```
+
+### API keys for cross-site access
+
+Instead of `?token=` query params, use scoped API keys with Bearer auth:
+
+```bash
+# Create a key with specific scopes
+vel auth create-key --name usage-share --role viewer \
+  --scope "GET /token-swap/api/usage" \
+  --scope "GET /token-swap/api/status"
+
+# Use it
+curl -H "Authorization: Bearer vel_ak_live_..." https://example.com/token-swap/api/status
+```
+
+---
+
 ## Common Mistakes to Watch For
 
 ### Auth mismatches
-- If `auth.mode` is `"token"` but no `auth.token` is set → all API calls will fail
-- If `auth.mode` is `"telegram"` but no `BOT_TOKEN` is set → Telegram login breaks
-- After changing auth config: restart service + re-verify
+- If `BOT_TOKEN` is set but user's Telegram ID isn't in `users.json` → they can't log in
+- If `users.json` doesn't exist → auto-migrated from legacy config on first startup
+- API keys must use `Authorization: Bearer vel_ak_...` header (not `?token=` query params)
+- After changing auth config or `users.json`: restart service + re-verify
 
 ### Missing files
 - Data sources referenced in `app.json` must actually exist (verify checks `data:` entries)
@@ -201,7 +291,10 @@ Apps without file-based data sources still get a `testdata/default/README.md` no
 |------|---------|
 | `config.json` | Main config (port, auth, panels) |
 | `.env` | BOT_TOKEN and other secrets |
+| `users.json` | User database (identities, API keys, roles) |
+| `data/sessions.db` | Server-side session store (bbolt) |
 | `verify-log.json` | Written by `vel verify --json` — read this when debugging failures |
 | `apps/*/verify.json` | Per-app health checks |
 | `sdk/vel/deploy.sh` | Deploy script — runs verify automatically |
+| `docs/AUTH.md` | Comprehensive auth documentation |
 | `AGENTS.md` | This file |

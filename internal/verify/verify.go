@@ -806,13 +806,19 @@ func checkConfig(rootDir string) CheckResult {
 		}
 	}
 
-	// allowedTelegramUsers / allowedUsers
+	// User authorization: users.json (new auth) or allowedTelegramUsers/allowedUsers (legacy)
+	usersPath := filepath.Join(rootDir, "users.json")
 	hasUsers := false
-	if authRaw, ok := raw["auth"]; ok {
-		var authObj map[string]json.RawMessage
-		if json.Unmarshal(authRaw, &authObj) == nil {
-			if _, ok2 := authObj["allowedTelegramUsers"]; ok2 {
-				hasUsers = true
+	if _, err := os.Stat(usersPath); err == nil {
+		hasUsers = true // new auth system with users.json
+	}
+	if !hasUsers {
+		if authRaw, ok := raw["auth"]; ok {
+			var authObj map[string]json.RawMessage
+			if json.Unmarshal(authRaw, &authObj) == nil {
+				if _, ok2 := authObj["allowedTelegramUsers"]; ok2 {
+					hasUsers = true
+				}
 			}
 		}
 	}
@@ -822,7 +828,7 @@ func checkConfig(rootDir string) CheckResult {
 		}
 	}
 	if !hasUsers {
-		missing = append(missing, "allowedTelegramUsers")
+		missing = append(missing, "users.json or allowedTelegramUsers")
 	}
 
 	if len(missing) > 0 {
