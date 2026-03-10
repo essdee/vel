@@ -19,8 +19,10 @@ import (
 // CheckResult is the result of a single health check.
 type CheckResult struct {
 	Name   string `json:"name"`
-	Status string `json:"status"` // "ok" or "fail"
+	Status string `json:"status"` // "ok", "fail", or "skipped"
 	Detail string `json:"detail,omitempty"`
+	Hint   string `json:"hint,omitempty"`
+	Layer  int    `json:"layer"`
 }
 
 // VerifyResult is the overall result of a health check run.
@@ -29,6 +31,7 @@ type VerifyResult struct {
 	Checks  []CheckResult `json:"checks"`
 	Passed  int           `json:"passed"`
 	Failed  int           `json:"failed"`
+	Skipped int           `json:"skipped"`
 }
 
 // VerifyConfig holds runtime context for the verify run.
@@ -39,29 +42,100 @@ type VerifyConfig struct {
 	Workspace string
 }
 
+// serverConfig holds extracted server settings from config.json.
+type serverConfig struct {
+	port      int
+	authToken string
+	authMode  string
+}
+
+// readServerConfig extracts port, auth token, and auth mode from config.json.
+func readServerConfig(rootDir string) serverConfig {
+	cfg := serverConfig{port: 3700} // default
+
+	// Check PORT env
+	if p := os.Getenv("PORT"); p != "" {
+		fmt.Sscanf(p, "%d", &cfg.port)
+	}
+
+	configPath := filepath.Join(rootDir, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return cfg
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return cfg
+	}
+
+	// Port: check top-level "port" field first, then "server.port"
+	if v, ok := raw["port"]; ok {
+		var port int
+		if json.Unmarshal(v, &port) == nil && port > 0 {
+			cfg.port = port
+		}
+	}
+	if v, ok := raw["server"]; ok {
+		var srv struct {
+			Port int `json:"port"`
+		}
+		if json.Unmarshal(v, &srv) == nil && srv.Port > 0 {
+			cfg.port = srv.Port
+		}
+	}
+
+	// Auth settings
+	if authRaw, ok := raw["auth"]; ok {
+		var authObj struct {
+			Mode  string `json:"mode"`
+			Token string `json:"token"`
+		}
+		if json.Unmarshal(authRaw, &authObj) == nil {
+			cfg.authToken = authObj.Token
+			cfg.authMode = authObj.Mode
+		}
+	}
+
+	// Auto-detect auth mode if not set
+	if cfg.authMode == "" {
+		botToken := os.Getenv("BOT_TOKEN")
+		if botToken == "" {
+			if envData, err := os.ReadFile(filepath.Join(rootDir, ".env")); err == nil {
+				for _, line := range strings.Split(string(envData), "\n") {
+					if strings.HasPrefix(line, "BOT_TOKEN=") {
+						botToken = strings.TrimSpace(strings.TrimPrefix(line, "BOT_TOKEN="))
+					}
+				}
+			}
+		}
+		if botToken != "" {
+			cfg.authMode = "telegram"
+		} else if cfg.authToken != "" {
+			cfg.authMode = "token"
+		} else {
+			cfg.authMode = "none"
+		}
+	}
+
+	return cfg
+}
+
 // RunVerify executes all built-in checks plus any app-registered checks.
 func RunVerify(cfg VerifyConfig) VerifyResult {
 	var checks []CheckResult
 
-	// 1. Config check
+	// ── Layer -1: existing core checks (config, auth token, openclaw-cli, telegram domain)
 	checks = append(checks, checkConfig(cfg.RootDir))
-
-	// 2. Auth check (bot token)
 	checks = append(checks, checkAuth(cfg.RootDir))
-
-	// 3. Panels check
-	checks = append(checks, checkPanels(cfg.Registry)...)
-
-	// 4. Panel-data check (data sources exist)
-	checks = append(checks, checkPanelData(cfg.Apps)...)
-
-	// 5. openclaw-cli check
 	checks = append(checks, checkOpenclawCLI())
-
-	// 6. Telegram Login Widget domain check
 	checks = append(checks, checkTelegramDomain(cfg.RootDir))
 
-	// 7. App-registered checks
+	// ── Layer -1: existing panel + data checks
+	checks = append(checks, checkPanels(cfg.Registry)...)
+	checks = append(checks, checkPanelData(cfg.Apps)...)
+
+	// ── Layer -1: app-registered checks
 	for _, hc := range vel.GetHealthChecks() {
 		pass, detail := hc.Check()
 		status := "ok"
@@ -72,15 +146,69 @@ func RunVerify(cfg VerifyConfig) VerifyResult {
 			Name:   hc.Name,
 			Status: status,
 			Detail: detail,
+			Layer:  -1,
 		})
 	}
 
-	passed, failed := 0, 0
+	// ── Layer 0: Framework — server reachability
+	srvCfg := readServerConfig(cfg.RootDir)
+	serverUp := false
+	layer0Check := checkServerHealth(srvCfg.port)
+	checks = append(checks, layer0Check)
+	if layer0Check.Status == "ok" {
+		serverUp = true
+	}
+
+	// ── Layer 1: Auth probe
+	authProbeOk := false
+	if serverUp {
+		authProbe := checkAuthProbe(srvCfg)
+		checks = append(checks, authProbe)
+		if authProbe.Status == "ok" {
+			authProbeOk = true
+		}
+	} else {
+		checks = append(checks, CheckResult{
+			Name:   "auth.probe",
+			Status: "skipped",
+			Detail: "skipped — server not reachable",
+			Layer:  1,
+		})
+	}
+
+	// ── Layer 2: Endpoint checks
+	if serverUp && authProbeOk {
+		checks = append(checks, checkEndpoints(srvCfg, cfg.Apps)...)
+	} else if serverUp {
+		// Auth failed — skip endpoints
+		checks = append(checks, CheckResult{
+			Name:   "endpoints",
+			Status: "skipped",
+			Detail: "skipped — auth probe failed (all endpoint checks skipped)",
+			Layer:  2,
+		})
+	} else {
+		checks = append(checks, CheckResult{
+			Name:   "endpoints",
+			Status: "skipped",
+			Detail: "skipped — server not reachable",
+			Layer:  2,
+		})
+	}
+
+	// ── Layer 3: App verify.json (always runs)
+	checks = append(checks, checkAppVerifyJSON(cfg.RootDir, srvCfg, cfg.Apps)...)
+
+	// Tally
+	passed, failed, skipped := 0, 0, 0
 	for _, c := range checks {
-		if c.Status == "ok" {
+		switch c.Status {
+		case "ok":
 			passed++
-		} else {
+		case "fail":
 			failed++
+		case "skipped":
+			skipped++
 		}
 	}
 
@@ -94,8 +222,481 @@ func RunVerify(cfg VerifyConfig) VerifyResult {
 		Checks:  checks,
 		Passed:  passed,
 		Failed:  failed,
+		Skipped: skipped,
 	}
 }
+
+// ── Layer 0 ──────────────────────────────────────────────────────────────────
+
+// checkServerHealth checks if the vel server is reachable on the configured port.
+func checkServerHealth(port int) CheckResult {
+	url := fmt.Sprintf("http://localhost:%d/api/health", port)
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return CheckResult{
+			Name:   "server.reachable",
+			Status: "fail",
+			Detail: fmt.Sprintf("server not reachable on port %d: %s", port, err),
+			Hint:   "Start the vel server with: ./vel start",
+			Layer:  0,
+		}
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return CheckResult{
+			Name:   "server.reachable",
+			Status: "fail",
+			Detail: fmt.Sprintf("GET /api/health returned %d (expected 200)", resp.StatusCode),
+			Layer:  0,
+		}
+	}
+	return CheckResult{
+		Name:   "server.reachable",
+		Status: "ok",
+		Detail: fmt.Sprintf("server up on port %d", port),
+		Layer:  0,
+	}
+}
+
+// ── Layer 1 ──────────────────────────────────────────────────────────────────
+
+// checkAuthProbe verifies auth behaviour by probing a protected API endpoint.
+// Note: /dashboard and /api/health are public (HTML shell + health); we probe /api/sources
+// which requires authentication for all modes except "none".
+func checkAuthProbe(cfg serverConfig) CheckResult {
+	base := fmt.Sprintf("http://localhost:%d", cfg.port)
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	// /api/sources is a protected endpoint that returns 403 without auth
+	protectedPath := "/api/sources"
+
+	switch cfg.authMode {
+	case "none":
+		// All requests should succeed
+		resp, err := client.Get(base + protectedPath)
+		if err != nil {
+			return CheckResult{
+				Name:   "auth.probe",
+				Status: "fail",
+				Detail: "could not reach server for auth probe: " + err.Error(),
+				Layer:  1,
+			}
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 200 {
+			return CheckResult{
+				Name:   "auth.probe",
+				Status: "ok",
+				Detail: "auth mode: none — unauthenticated access works",
+				Layer:  1,
+			}
+		}
+		return CheckResult{
+			Name:   "auth.probe",
+			Status: "fail",
+			Detail: fmt.Sprintf("auth mode: none — expected 200 on %s, got %d", protectedPath, resp.StatusCode),
+			Layer:  1,
+		}
+
+	case "token":
+		// Without token: should get 401/403
+		resp, err := client.Get(base + protectedPath)
+		if err != nil {
+			return CheckResult{
+				Name:   "auth.probe",
+				Status: "fail",
+				Detail: "could not reach server for auth probe: " + err.Error(),
+				Layer:  1,
+			}
+		}
+		resp.Body.Close()
+		unauthStatus := resp.StatusCode
+
+		// With token: should get 200
+		var authStatus int
+		if cfg.authToken != "" {
+			resp2, err := client.Get(fmt.Sprintf("%s%s?token=%s", base, protectedPath, cfg.authToken))
+			if err != nil {
+				return CheckResult{
+					Name:   "auth.probe",
+					Status: "fail",
+					Detail: "auth probe with token failed: " + err.Error(),
+					Layer:  1,
+				}
+			}
+			resp2.Body.Close()
+			authStatus = resp2.StatusCode
+		}
+
+		unauthRejected := unauthStatus == 401 || unauthStatus == 403
+		authAccepted := cfg.authToken == "" || authStatus == 200
+
+		if unauthRejected && authAccepted {
+			detail := fmt.Sprintf("auth mode: token — unauth=%d (rejected)", unauthStatus)
+			if cfg.authToken != "" {
+				detail += fmt.Sprintf(", with token=%d (accepted)", authStatus)
+			}
+			return CheckResult{
+				Name:   "auth.probe",
+				Status: "ok",
+				Detail: detail,
+				Layer:  1,
+			}
+		}
+		return CheckResult{
+			Name:   "auth.probe",
+			Status: "fail",
+			Detail: fmt.Sprintf("auth mode: token — unauth=%d (want 401/403), with token=%d (want 200)", unauthStatus, authStatus),
+			Hint:   "Check auth.token in config.json matches what the server uses",
+			Layer:  1,
+		}
+
+	case "telegram":
+		// Without auth cookie: should get 403
+		resp, err := client.Get(base + protectedPath)
+		if err != nil {
+			return CheckResult{
+				Name:   "auth.probe",
+				Status: "fail",
+				Detail: "could not reach server for auth probe: " + err.Error(),
+				Layer:  1,
+			}
+		}
+		resp.Body.Close()
+		if resp.StatusCode == 401 || resp.StatusCode == 403 {
+			return CheckResult{
+				Name:   "auth.probe",
+				Status: "ok",
+				Detail: fmt.Sprintf("auth mode: telegram — unauthenticated requests correctly rejected (%d)", resp.StatusCode),
+				Layer:  1,
+			}
+		}
+		return CheckResult{
+			Name:   "auth.probe",
+			Status: "fail",
+			Detail: fmt.Sprintf("auth mode: telegram — expected 401/403 on unauthenticated %s, got %d", protectedPath, resp.StatusCode),
+			Layer:  1,
+		}
+
+	default:
+		return CheckResult{
+			Name:   "auth.probe",
+			Status: "ok",
+			Detail: fmt.Sprintf("auth mode: %s — probe skipped", cfg.authMode),
+			Layer:  1,
+		}
+	}
+}
+
+// ── Layer 2 ──────────────────────────────────────────────────────────────────
+
+// checkEndpoints verifies key HTTP endpoints return expected responses.
+func checkEndpoints(cfg serverConfig, appList []*apps.App) []CheckResult {
+	base := fmt.Sprintf("http://localhost:%d", cfg.port)
+	client := &http.Client{
+		Timeout: 8 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // don't follow redirects
+		},
+	}
+
+	// Build authenticated URL helper
+	authedURL := func(path string) string {
+		url := base + path
+		if cfg.authToken != "" && cfg.authMode == "token" {
+			if strings.Contains(path, "?") {
+				url += "&token=" + cfg.authToken
+			} else {
+				url += "?token=" + cfg.authToken
+			}
+		}
+		return url
+	}
+
+	var results []CheckResult
+
+	// /dashboard — main velboard page (always served as HTML by core)
+	results = append(results, checkHTTPEndpoint(client, authedURL("/dashboard"), "endpoint:/dashboard", 200, "html", 2))
+
+	// /api/health — public health endpoint
+	results = append(results, checkHTTPEndpoint(client, base+"/api/health", "endpoint:/api/health", 200, "", 2))
+
+	// /api/sources — protected data endpoint
+	results = append(results, checkHTTPEndpoint(client, authedURL("/api/sources"), "endpoint:/api/sources", 200, "", 2))
+
+	// Each registered app's actual routes (from app.json)
+	for _, app := range appList {
+		if len(app.Routes) == 0 {
+			// App has no explicit routes (e.g. velboard uses /dashboard via core)
+			continue
+		}
+		for routePath := range app.Routes {
+			// Check the first route per app to avoid flooding
+			results = append(results, checkHTTPEndpoint(client, authedURL(routePath), "endpoint:"+routePath, 200, "", 2))
+			break
+		}
+	}
+
+	return results
+}
+
+// checkHTTPEndpoint performs a single HTTP GET and validates the response.
+func checkHTTPEndpoint(client *http.Client, url, name string, expectStatus int, expectBody string, layer int) CheckResult {
+	resp, err := client.Get(url)
+	if err != nil {
+		return CheckResult{
+			Name:   name,
+			Status: "fail",
+			Detail: "request failed: " + err.Error(),
+			Layer:  layer,
+		}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != expectStatus {
+		return CheckResult{
+			Name:   name,
+			Status: "fail",
+			Detail: fmt.Sprintf("expected status %d, got %d", expectStatus, resp.StatusCode),
+			Layer:  layer,
+		}
+	}
+
+	if expectBody == "html" {
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		if err != nil {
+			return CheckResult{
+				Name:   name,
+				Status: "fail",
+				Detail: "could not read response body",
+				Layer:  layer,
+			}
+		}
+		bodyStr := strings.ToLower(string(body))
+		if !strings.Contains(bodyStr, "<html") && !strings.Contains(bodyStr, "<!doctype") {
+			return CheckResult{
+				Name:   name,
+				Status: "fail",
+				Detail: "response does not look like HTML",
+				Layer:  layer,
+			}
+		}
+	}
+
+	return CheckResult{
+		Name:   name,
+		Status: "ok",
+		Detail: fmt.Sprintf("HTTP %d", resp.StatusCode),
+		Layer:  layer,
+	}
+}
+
+// ── Layer 3 ──────────────────────────────────────────────────────────────────
+
+// AppVerifyCheck is a single check from an app's verify.json.
+type AppVerifyCheck struct {
+	Type            string `json:"type"`             // "http_get" | "file_exists"
+	Path            string `json:"path"`             // URL path or file path
+	RelativeTo      string `json:"relative_to"`      // "app" | "root" | "workspace" | "absolute"
+	ExpectStatus    int    `json:"expect_status"`    // for http_get
+	ExpectJSONField string `json:"expect_json_field"` // for http_get
+	Hint            string `json:"hint"`
+}
+
+// AppVerifyFile is the schema for verify.json in each app directory.
+type AppVerifyFile struct {
+	Checks []AppVerifyCheck `json:"checks"`
+}
+
+// checkAppVerifyJSON reads and runs verify.json checks for each app.
+func checkAppVerifyJSON(rootDir string, cfg serverConfig, appList []*apps.App) []CheckResult {
+	var results []CheckResult
+	base := fmt.Sprintf("http://localhost:%d", cfg.port)
+	home, _ := os.UserHomeDir()
+
+	client := &http.Client{Timeout: 8 * time.Second}
+
+	authedURL := func(path string) string {
+		url := base + path
+		if cfg.authToken != "" && cfg.authMode == "token" {
+			if strings.Contains(path, "?") {
+				url += "&token=" + cfg.authToken
+			} else {
+				url += "?token=" + cfg.authToken
+			}
+		}
+		return url
+	}
+
+	// Map app name → app dir
+	appDirs := make(map[string]string)
+	for _, app := range appList {
+		appDirs[app.Name] = app.Dir
+	}
+
+	// Scan all app directories under rootDir/apps/
+	appsDir := filepath.Join(rootDir, "apps")
+	entries, err := os.ReadDir(appsDir)
+	if err != nil {
+		return results
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		appName := entry.Name()
+		appDir := filepath.Join(appsDir, appName)
+
+		verifyPath := filepath.Join(appDir, "verify.json")
+		data, err := os.ReadFile(verifyPath)
+		if err != nil {
+			continue // no verify.json — that's fine
+		}
+
+		var vf AppVerifyFile
+		if err := json.Unmarshal(data, &vf); err != nil {
+			results = append(results, CheckResult{
+				Name:   fmt.Sprintf("verify.json:%s", appName),
+				Status: "fail",
+				Detail: "invalid verify.json: " + err.Error(),
+				Layer:  3,
+			})
+			continue
+		}
+
+		for i, check := range vf.Checks {
+			checkName := fmt.Sprintf("app:%s:check%d", appName, i+1)
+			if check.Path != "" {
+				// Use path as suffix for readability
+				short := check.Path
+				if len(short) > 30 {
+					short = "..." + short[len(short)-27:]
+				}
+				checkName = fmt.Sprintf("app:%s:%s", appName, short)
+			}
+
+			switch check.Type {
+			case "http_get":
+				expectStatus := check.ExpectStatus
+				if expectStatus == 0 {
+					expectStatus = 200
+				}
+
+				url := authedURL(check.Path)
+				resp, err := client.Get(url)
+				if err != nil {
+					results = append(results, CheckResult{
+						Name:   checkName,
+						Status: "fail",
+						Detail: "request failed: " + err.Error(),
+						Hint:   check.Hint,
+						Layer:  3,
+					})
+					continue
+				}
+
+				body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+				resp.Body.Close()
+
+				if resp.StatusCode != expectStatus {
+					results = append(results, CheckResult{
+						Name:   checkName,
+						Status: "fail",
+						Detail: fmt.Sprintf("expected status %d, got %d", expectStatus, resp.StatusCode),
+						Hint:   check.Hint,
+						Layer:  3,
+					})
+					continue
+				}
+
+				if check.ExpectJSONField != "" {
+					var obj map[string]json.RawMessage
+					if err := json.Unmarshal(body, &obj); err != nil {
+						results = append(results, CheckResult{
+							Name:   checkName,
+							Status: "fail",
+							Detail: fmt.Sprintf("expected JSON with field %q but response is not valid JSON", check.ExpectJSONField),
+							Hint:   check.Hint,
+							Layer:  3,
+						})
+						continue
+					}
+					if _, ok := obj[check.ExpectJSONField]; !ok {
+						results = append(results, CheckResult{
+							Name:   checkName,
+							Status: "fail",
+							Detail: fmt.Sprintf("JSON field %q not found in response", check.ExpectJSONField),
+							Hint:   check.Hint,
+							Layer:  3,
+						})
+						continue
+					}
+				}
+
+				results = append(results, CheckResult{
+					Name:   checkName,
+					Status: "ok",
+					Detail: fmt.Sprintf("HTTP %d", resp.StatusCode),
+					Layer:  3,
+				})
+
+			case "file_exists":
+				var fullPath string
+				switch check.RelativeTo {
+				case "app":
+					fullPath = filepath.Join(appDir, check.Path)
+				case "root":
+					fullPath = filepath.Join(rootDir, check.Path)
+				case "workspace":
+					fullPath = filepath.Join(home, ".openclaw", "workspace", check.Path)
+				case "absolute", "":
+					if filepath.IsAbs(check.Path) {
+						fullPath = check.Path
+					} else {
+						fullPath = filepath.Join(appDir, check.Path)
+					}
+				default:
+					fullPath = filepath.Join(appDir, check.Path)
+				}
+
+				if _, err := os.Stat(fullPath); err != nil {
+					results = append(results, CheckResult{
+						Name:   checkName,
+						Status: "fail",
+						Detail: fmt.Sprintf("file not found: %s", fullPath),
+						Hint:   check.Hint,
+						Layer:  3,
+					})
+				} else {
+					results = append(results, CheckResult{
+						Name:   checkName,
+						Status: "ok",
+						Detail: fmt.Sprintf("file exists: %s", fullPath),
+						Layer:  3,
+					})
+				}
+
+			default:
+				results = append(results, CheckResult{
+					Name:   checkName,
+					Status: "fail",
+					Detail: fmt.Sprintf("unknown check type: %s", check.Type),
+					Layer:  3,
+				})
+			}
+		}
+	}
+
+	return results
+}
+
+// ── Existing checks (unchanged) ──────────────────────────────────────────────
 
 // checkConfig verifies config.json exists and has required fields.
 func checkConfig(rootDir string) CheckResult {

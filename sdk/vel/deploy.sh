@@ -11,6 +11,18 @@ VEL_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Auto-detect Go
 GO="$(which go 2>/dev/null || echo /usr/local/go/bin/go)"
 
+# Load .env for optional variables
+if [ -f "$VEL_DIR/.env" ]; then
+    while IFS='=' read -r key value; do
+        case "$key" in
+            OPENCLAW_GATEWAY_TOKEN) OPENCLAW_GATEWAY_TOKEN="${value}" ;;
+            OPENCLAW_GATEWAY_PORT) OPENCLAW_GATEWAY_PORT="${value}" ;;
+        esac
+    done < "$VEL_DIR/.env"
+fi
+OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}"
+OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+
 # Auto-detect systemd service name by finding which service runs from this dir
 SERVICE_NAME=""
 for svc in openclaw-dashboard openclaw-dashboard-staging; do
@@ -67,10 +79,37 @@ sleep 2
 
 if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
     echo ""
-    echo "✅ Deploy complete!"
+    echo "✅ Service restarted successfully"
 else
     echo ""
     echo "❌ Service failed to start!"
     sudo journalctl -u "$SERVICE_NAME" --no-pager -n 20
     exit 1
 fi
+
+# Step 5: Verify
+echo ""
+echo "🔍 Verifying deployment..."
+sleep 2  # give server a moment to fully initialize
+cd "$VEL_DIR"
+./vel verify --json 2>&1 | tee /dev/stderr
+
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    echo ""
+    echo "❌ Verify failed! Check verify-log.json for details."
+
+    # Notify OpenClaw agent if gateway is available
+    if [ -n "$OPENCLAW_GATEWAY_TOKEN" ]; then
+        VERIFY_LOG=$(cat "$VEL_DIR/verify-log.json" 2>/dev/null || echo "{}")
+        curl -s -X POST "http://localhost:${OPENCLAW_GATEWAY_PORT}/__openclaw__/api/cron/wake" \
+            -H "Authorization: Bearer ${OPENCLAW_GATEWAY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\": \"vel verify failed after deploy. Failures: ${VERIFY_LOG}\"}" \
+            >/dev/null 2>&1 || true
+        echo "📡 Notified OpenClaw agent about failures"
+    fi
+    exit 1
+fi
+
+echo ""
+echo "✅ Deploy complete!"

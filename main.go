@@ -122,10 +122,17 @@ Commands:
 Run 'vel <command> --help' for command-specific flags.`)
 }
 
-func runVerify(_ []string) {
+func runVerify(args []string) {
+	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	jsonMode := fs.Bool("json", false, "Output JSON and write verify-log.json")
+	verbose := fs.Bool("verbose", false, "Show all checks including passed ones")
+	fs.Parse(args)
+
 	rootDir, _ := os.Getwd()
 
-	fmt.Print("\n⚡ Vel Health Check\n\n")
+	if !*jsonMode {
+		fmt.Print("\n⚡ Vel Health Check\n\n")
+	}
 
 	// Discover apps
 	discoveredApps, _ := apps.Discover(rootDir)
@@ -147,43 +154,98 @@ func runVerify(_ []string) {
 
 	result := verify.RunVerify(cfg)
 
-	// Print grouped output
-	var panelChecks, dataChecks, appChecks, coreChecks []verify.CheckResult
+	// ── JSON mode ──
+	if *jsonMode {
+		out, _ := json.MarshalIndent(result, "", "  ")
+		fmt.Println(string(out))
+
+		// Write to verify-log.json
+		logPath := filepath.Join(rootDir, "verify-log.json")
+		os.WriteFile(logPath, out, 0644)
+
+		if result.Failed > 0 {
+			os.Exit(1)
+		}
+		return
+	}
+
+	// ── Human-readable output ──
+	// Group checks by category
+	var coreChecks, panelChecks, dataChecks, frameworkChecks, authProbeChecks, endpointChecks, appVerifyChecks, otherChecks []verify.CheckResult
+
 	for _, c := range result.Checks {
 		switch {
 		case strings.HasPrefix(c.Name, "panel:"):
 			panelChecks = append(panelChecks, c)
 		case strings.HasPrefix(c.Name, "data:"):
 			dataChecks = append(dataChecks, c)
+		case c.Name == "server.reachable":
+			frameworkChecks = append(frameworkChecks, c)
+		case c.Name == "auth.probe":
+			authProbeChecks = append(authProbeChecks, c)
+		case strings.HasPrefix(c.Name, "endpoint:"):
+			endpointChecks = append(endpointChecks, c)
+		case strings.HasPrefix(c.Name, "app:"):
+			appVerifyChecks = append(appVerifyChecks, c)
 		case c.Name == "config" || c.Name == "auth" || c.Name == "openclaw-cli" ||
 			strings.HasPrefix(c.Name, "auth."):
 			coreChecks = append(coreChecks, c)
 		default:
-			appChecks = append(appChecks, c)
+			otherChecks = append(otherChecks, c)
 		}
 	}
 
 	printCheck := func(c verify.CheckResult) {
+		// In normal mode, skip passed checks unless --verbose
+		if !*verbose && c.Status == "ok" {
+			return
+		}
+
 		label := c.Name
 		// Strip prefixes for display
 		label = strings.TrimPrefix(label, "panel:")
 		label = strings.TrimPrefix(label, "data:")
+		label = strings.TrimPrefix(label, "endpoint:")
+		label = strings.TrimPrefix(label, "app:")
 
 		var detail string
 		if c.Detail != "" {
 			detail = " — " + c.Detail
 		}
 
-		if c.Status == "ok" {
+		switch c.Status {
+		case "ok":
 			fmt.Printf("  ✓ %s%s\n", label, detail)
-		} else {
+		case "skipped":
+			fmt.Printf("  ○ %s%s\n", label, detail)
+		default:
 			fmt.Printf("  ✗ %s%s\n", label, detail)
+			if c.Hint != "" {
+				fmt.Printf("    💡 %s\n", c.Hint)
+			}
 		}
 	}
 
 	// Core checks
+	fmt.Println("  Core:")
 	for _, c := range coreChecks {
 		printCheck(c)
+	}
+
+	// Framework (server up)
+	if len(frameworkChecks) > 0 {
+		fmt.Println("\n  Framework:")
+		for _, c := range frameworkChecks {
+			printCheck(c)
+		}
+	}
+
+	// Auth probe
+	if len(authProbeChecks) > 0 {
+		fmt.Println("\n  Auth probe:")
+		for _, c := range authProbeChecks {
+			printCheck(c)
+		}
 	}
 
 	// Panels
@@ -202,15 +264,31 @@ func runVerify(_ []string) {
 		}
 	}
 
-	// App checks
-	if len(appChecks) > 0 {
-		fmt.Println("\n  App checks:")
-		for _, c := range appChecks {
+	// Endpoint checks
+	if len(endpointChecks) > 0 {
+		fmt.Println("\n  Endpoints:")
+		for _, c := range endpointChecks {
 			printCheck(c)
 		}
 	}
 
-	fmt.Printf("\n  %d passed, %d failed\n\n", result.Passed, result.Failed)
+	// App verify.json checks
+	if len(appVerifyChecks) > 0 {
+		fmt.Println("\n  App checks (verify.json):")
+		for _, c := range appVerifyChecks {
+			printCheck(c)
+		}
+	}
+
+	// Other (app-registered health checks)
+	if len(otherChecks) > 0 {
+		fmt.Println("\n  App health checks:")
+		for _, c := range otherChecks {
+			printCheck(c)
+		}
+	}
+
+	fmt.Printf("\n  %d passed, %d failed, %d skipped\n\n", result.Passed, result.Failed, result.Skipped)
 
 	if result.Failed > 0 {
 		os.Exit(1)
