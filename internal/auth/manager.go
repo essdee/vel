@@ -8,13 +8,23 @@ import (
 	"time"
 )
 
+// MagicLinkConfig holds configuration for magic link email sending.
+type MagicLinkConfig struct {
+	Enabled       bool
+	ExpiryMinutes int
+	EmailEnabled  bool
+	EmailFrom     string
+}
+
 // AuthManager coordinates authentication providers, sessions, and users.
 type AuthManager struct {
-	providers    []Provider
-	userStore    *UserStore
-	sessionStore SessionStore
-	maxAge       time.Duration
-	cookieName   string
+	providers       []Provider
+	userStore       *UserStore
+	sessionStore    SessionStore
+	magicLinkStore  *MagicLinkStore
+	magicLinkConfig *MagicLinkConfig
+	maxAge          time.Duration
+	cookieName      string
 }
 
 // AuthManagerConfig holds configuration for the auth manager.
@@ -147,9 +157,35 @@ func (m *AuthManager) SessionStore() SessionStore {
 	return m.sessionStore
 }
 
-// Cleanup removes expired sessions.
+// SetMagicLinkStore sets the magic link store for the auth manager.
+func (m *AuthManager) SetMagicLinkStore(store *MagicLinkStore) {
+	m.magicLinkStore = store
+}
+
+// MagicLinkStore returns the magic link store (may be nil).
+func (m *AuthManager) MagicLinkStore() *MagicLinkStore {
+	return m.magicLinkStore
+}
+
+// SetMagicLinkConfig sets the magic link configuration.
+func (m *AuthManager) SetMagicLinkConfig(cfg *MagicLinkConfig) {
+	m.magicLinkConfig = cfg
+}
+
+// MagicLinkConfig returns the magic link configuration (may be nil).
+func (m *AuthManager) MagicLinkConfig() *MagicLinkConfig {
+	return m.magicLinkConfig
+}
+
+// Cleanup removes expired sessions and magic links.
 func (m *AuthManager) Cleanup() error {
-	return m.sessionStore.Cleanup()
+	if err := m.sessionStore.Cleanup(); err != nil {
+		return err
+	}
+	if m.magicLinkStore != nil {
+		return m.magicLinkStore.Cleanup()
+	}
+	return nil
 }
 
 func generateSessionID() (string, error) {

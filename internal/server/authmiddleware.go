@@ -174,7 +174,8 @@ func isPublicPath(path string) bool {
 	switch path {
 	case "/", "/login", "/auth/login", "/api/health", "/api/auth",
 		"/auth/magic", "/auth/telegram/callback", "/auth/token",
-		"/auth/dev", "/auth/logout", "/favicon.ico", "/robots.txt":
+		"/auth/dev", "/auth/logout", "/favicon.ico", "/robots.txt",
+		"/api/auth/magic-link/request":
 		return true
 	}
 	// Prefix matches

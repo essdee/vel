@@ -780,6 +780,207 @@ func NewServer(cfg *Config) http.Handler {
 		http.Redirect(w, r, "/dashboard", http.StatusFound)
 	})
 
+	// Magic link validation endpoint — PUBLIC
+	mux.HandleFunc("/auth/magic", func(w http.ResponseWriter, r *http.Request) {
+		if !authLimiter.allow(getClientIP(r)) {
+			http.Error(w, "Too many requests", 429)
+			return
+		}
+
+		token := r.URL.Query().Get("ml_token")
+		if token == "" || cfg.AuthManager == nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(400)
+			fmt.Fprint(w, magicLinkErrorHTML("Invalid or expired link", "The login link is missing or malformed."))
+			return
+		}
+
+		mlProvider := cfg.AuthManager.GetProvider("magic_link")
+		if mlProvider == nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(500)
+			fmt.Fprint(w, magicLinkErrorHTML("Login unavailable", "Magic link login is not configured."))
+			return
+		}
+
+		creds := auth.MagicLinkCredentials{Token: token}
+		identity, err := mlProvider.Authenticate(creds)
+		if err != nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(401)
+			fmt.Fprint(w, magicLinkErrorHTML("Invalid or expired link", "This login link has already been used or has expired. Please request a new one."))
+			return
+		}
+
+		// Create session
+		sess, err := cfg.AuthManager.CreateSession(identity)
+		if err != nil {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(500)
+			fmt.Fprint(w, magicLinkErrorHTML("Login failed", "Session creation failed. Please try again."))
+			return
+		}
+		setSessionCookie(w, cfg.AuthManager, sess.ID)
+
+		// Redirect
+		redirect := r.URL.Query().Get("redirect")
+		if redirect == "" {
+			redirect = "/dashboard"
+		}
+		http.Redirect(w, r, redirect, http.StatusFound)
+	})
+
+	// Admin endpoint to generate magic links — RequireAdmin
+	mux.HandleFunc("/api/auth/magic-link", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+
+		// Check path exactly (don't match /api/auth/magic-link/request)
+		if r.URL.Path != "/api/auth/magic-link" {
+			http.NotFound(w, r)
+			return
+		}
+
+		// Require admin
+		id := GetIdentity(r)
+		if id == nil || id.Role != "admin" {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+
+		if cfg.AuthManager == nil {
+			w.WriteHeader(500)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "auth not configured"})
+			return
+		}
+
+		var body struct {
+			UserID        string `json:"user_id"`
+			ExpiresMinutes int   `json:"expires_minutes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(400)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "invalid request body"})
+			return
+		}
+		if body.UserID == "" {
+			w.WriteHeader(400)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "user_id required"})
+			return
+		}
+		if body.ExpiresMinutes <= 0 {
+			body.ExpiresMinutes = 15
+		}
+
+		// Verify user exists
+		user := cfg.AuthManager.UserStore().FindUserByID(body.UserID)
+		if user == nil {
+			w.WriteHeader(404)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "user not found"})
+			return
+		}
+
+		mlStore := cfg.AuthManager.MagicLinkStore()
+		if mlStore == nil {
+			w.WriteHeader(500)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "magic link store not configured"})
+			return
+		}
+
+		token, err := mlStore.Create(body.UserID, body.ExpiresMinutes)
+		if err != nil {
+			w.WriteHeader(429)
+			writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+			return
+		}
+
+		// Build URL using authUrl domain or fallback
+		domain := getDomain(cfg)
+		url := fmt.Sprintf("https://%s/auth/magic?ml_token=%s", domain, token)
+
+		writeJSON(w, map[string]interface{}{"ok": true, "url": url})
+	})
+
+	// Public endpoint to request magic link via email — no auth
+	mux.HandleFunc("/api/auth/magic-link/request", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+
+		// Always return same response to prevent email enumeration
+		safeResponse := map[string]interface{}{
+			"ok":      true,
+			"message": "If that email is registered, a login link was sent.",
+		}
+
+		if cfg.AuthManager == nil {
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "Email login not available"})
+			return
+		}
+
+		mlStore := cfg.AuthManager.MagicLinkStore()
+		if mlStore == nil {
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "Email login not available"})
+			return
+		}
+
+		// Check if email sending is configured
+		mlCfg := cfg.AuthManager.MagicLinkConfig()
+		if mlCfg == nil || !mlCfg.EmailEnabled {
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "Email login not available"})
+			return
+		}
+
+		if !auth.IsHimalayaAvailable() {
+			writeJSON(w, map[string]interface{}{"ok": false, "error": "Email login not available"})
+			return
+		}
+
+		var body struct {
+			Email string `json:"email"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Email == "" {
+			writeJSON(w, safeResponse)
+			return
+		}
+
+		// Rate limit by IP
+		if !authLimiter.allow(getClientIP(r)) {
+			writeJSON(w, safeResponse)
+			return
+		}
+
+		// Look up user by email
+		user := cfg.AuthManager.UserStore().FindUserByEmail(body.Email)
+		if user == nil {
+			// Don't reveal that the email doesn't exist
+			writeJSON(w, safeResponse)
+			return
+		}
+
+		// Generate magic link
+		token, err := mlStore.Create(user.ID, mlCfg.ExpiryMinutes)
+		if err != nil {
+			// Rate limit or other error — still return safe response
+			writeJSON(w, safeResponse)
+			return
+		}
+
+		domain := getDomain(cfg)
+		magicURL := fmt.Sprintf("https://%s/auth/magic?ml_token=%s", domain, token)
+
+		// Send email
+		if err := auth.SendMagicLinkEmail(body.Email, mlCfg.EmailFrom, magicURL, domain); err != nil {
+			fmt.Printf("[Auth] Failed to send magic link email to %s: %v\n", body.Email, err)
+		}
+
+		writeJSON(w, safeResponse)
+	})
+
 	mux.HandleFunc("/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		if cfg.AuthManager != nil {
 			// Destroy session
@@ -1204,6 +1405,49 @@ func cacheHandler(h http.Handler, maxAge string) http.Handler {
 		w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%s", maxAge))
 		h.ServeHTTP(w, r)
 	})
+}
+
+// getDomain extracts the domain from the AuthURL config or falls back to localhost.
+func getDomain(cfg *Config) string {
+	if cfg.PublicConfig != nil {
+		if authURL, ok := cfg.PublicConfig["authUrl"].(string); ok && authURL != "" {
+			// Extract domain from URL like https://w-ram.ai.essd.ee/auth/telegram/callback
+			authURL = strings.TrimPrefix(authURL, "https://")
+			authURL = strings.TrimPrefix(authURL, "http://")
+			if idx := strings.Index(authURL, "/"); idx > 0 {
+				return authURL[:idx]
+			}
+			return authURL
+		}
+	}
+	return fmt.Sprintf("localhost:%d", cfg.Port)
+}
+
+// magicLinkErrorHTML returns a styled error page for magic link failures.
+func magicLinkErrorHTML(title, message string) string {
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>%s — Vel</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0a0a0f; color: #e2e2e8; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .card { background: #12121a; border: 1px solid #1e1e2e; border-radius: 16px; padding: 40px 32px; text-align: center; max-width: 400px; }
+    h1 { font-size: 24px; margin-bottom: 12px; color: #f87171; }
+    p { color: #6e6e82; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+    a { color: #c9a84c; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>%s</h1>
+    <p>%s</p>
+    <a href="/login">← Back to login</a>
+  </div>
+</body>
+</html>`, title, title, message)
 }
 
 func applyMiddleware(h http.Handler) http.Handler {

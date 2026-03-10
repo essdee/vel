@@ -52,6 +52,12 @@ func (s *BoltSessionStore) Close() error {
 	return s.db.Close()
 }
 
+// DB returns the underlying bbolt database, allowing other stores
+// (e.g. MagicLinkStore) to share the same database file.
+func (s *BoltSessionStore) DB() *bolt.DB {
+	return s.db
+}
+
 // Get retrieves a session by its ID. Returns (nil, nil) when not found.
 func (s *BoltSessionStore) Get(id string) (*Session, error) {
 	var sess *Session

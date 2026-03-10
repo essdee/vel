@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -160,6 +161,86 @@ func (us *UserStore) GetData() *UsersFile {
 	return us.data
 }
 
+// FindUserByEmail looks up a user by email address (case-insensitive).
+// Returns nil if not found.
+func (us *UserStore) FindUserByEmail(email string) *UserRecord {
+	us.mu.RLock()
+	defer us.mu.RUnlock()
+	if us.data == nil {
+		return nil
+	}
+	emailLower := strings.ToLower(email)
+	for i := range us.data.Users {
+		u := &us.data.Users[i]
+		if strings.ToLower(u.Email) == emailLower {
+			return u
+		}
+	}
+	return nil
+}
+
+// FindUserByID looks up a user by their canonical ID.
+// Returns nil if not found.
+func (us *UserStore) FindUserByID(id string) *UserRecord {
+	us.mu.RLock()
+	defer us.mu.RUnlock()
+	if us.data == nil {
+		return nil
+	}
+	for i := range us.data.Users {
+		u := &us.data.Users[i]
+		if u.ID == id {
+			return u
+		}
+	}
+	return nil
+}
+
+// AddAPIKey adds an API key entry and persists to disk.
+func (us *UserStore) AddAPIKey(key APIKey) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	if us.data == nil {
+		return fmt.Errorf("user store not loaded")
+	}
+	us.data.APIKeys = append(us.data.APIKeys, key)
+	return SaveUsers(us.path, us.data)
+}
+
+// RemoveAPIKey removes an API key by ID and persists to disk.
+// Returns true if the key was found and removed.
+func (us *UserStore) RemoveAPIKey(id string) (bool, error) {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	if us.data == nil {
+		return false, fmt.Errorf("user store not loaded")
+	}
+	for i, k := range us.data.APIKeys {
+		if k.ID == id {
+			us.data.APIKeys = append(us.data.APIKeys[:i], us.data.APIKeys[i+1:]...)
+			return true, SaveUsers(us.path, us.data)
+		}
+	}
+	return false, nil
+}
+
+// AddUser adds a user record and persists to disk.
+func (us *UserStore) AddUser(user UserRecord) error {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	if us.data == nil {
+		return fmt.Errorf("user store not loaded")
+	}
+	// Check for duplicate ID
+	for _, u := range us.data.Users {
+		if u.ID == user.ID {
+			return fmt.Errorf("user %s already exists", user.ID)
+		}
+	}
+	us.data.Users = append(us.data.Users, user)
+	return SaveUsers(us.path, us.data)
+}
+
 // LoadUsers reads and parses a users.json file. Does not start a watcher.
 func LoadUsers(path string) (*UsersFile, error) {
 	data, err := os.ReadFile(path)
@@ -175,9 +256,17 @@ func LoadUsers(path string) (*UsersFile, error) {
 
 // SaveUsers marshals and writes a UsersFile to disk (indented JSON).
 func SaveUsers(path string, uf *UsersFile) error {
+	// Ensure non-nil slices so JSON serializes as [] not null
+	if uf.Users == nil {
+		uf.Users = []UserRecord{}
+	}
+	if uf.APIKeys == nil {
+		uf.APIKeys = []APIKey{}
+	}
 	data, err := json.MarshalIndent(uf, "", "  ")
 	if err != nil {
 		return err
 	}
+	data = append(data, '\n')
 	return os.WriteFile(path, data, 0o644)
 }

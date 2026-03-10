@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -15,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 
 	"vel/internal/apps"
 	"vel/internal/auth"
@@ -94,6 +97,12 @@ func main() {
 		runVerify(os.Args[2:])
 	case "test":
 		runTest(os.Args[2:])
+	case "auth":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: vel auth <create-key|list-keys|revoke-key|magic-link|list-users|add-user>\n")
+			os.Exit(1)
+		}
+		runAuth(os.Args[2], os.Args[3:])
 	case "version":
 		fmt.Printf("vel %s\n", Version)
 	case "help", "--help", "-h":
@@ -117,13 +126,14 @@ Usage:
   vel [command] [flags]
 
 Commands:
-  start     Start the server (default if no command given)
-  build     Scan apps, check capabilities, compile binary
-  caps      List or export app capabilities
-  verify    Run health checks on the current installation
-  test      Run tests with fixture data
-  version   Print version
-  help      Show this help
+  start       Start the server (default if no command given)
+  build       Scan apps, check capabilities, compile binary
+  caps        List or export app capabilities
+  verify      Run health checks on the current installation
+  test        Run tests with fixture data
+  auth        Manage authentication (create-key, list-keys, revoke-key, magic-link, list-users, add-user)
+  version     Print version
+  help        Show this help
 
 Run 'vel <command> --help' for command-specific flags.`)
 }
@@ -649,6 +659,315 @@ func startTestServer(rootDir string, discoveredApps []*apps.App, fixture string)
 	return port, stop, nil
 }
 
+func runAuth(subcmd string, args []string) {
+	rootDir, _ := os.Getwd()
+	usersPath := filepath.Join(rootDir, "users.json")
+
+	switch subcmd {
+	case "create-key":
+		fs := flag.NewFlagSet("auth create-key", flag.ExitOnError)
+		name := fs.String("name", "", "Key name/ID")
+		role := fs.String("role", "viewer", "Role: admin, user, viewer")
+		var scopes multiFlag
+		fs.Var(&scopes, "scope", "Scope (repeatable, e.g. 'GET /api/health')")
+		fs.Parse(args)
+
+		if *name == "" {
+			fmt.Fprintf(os.Stderr, "Error: --name is required\n")
+			os.Exit(1)
+		}
+
+		// Generate API key
+		keyBytes := make([]byte, 32)
+		if _, err := rand.Read(keyBytes); err != nil {
+			fmt.Fprintf(os.Stderr, "Error generating key: %v\n", err)
+			os.Exit(1)
+		}
+		plainKey := "vel_ak_live_" + hex.EncodeToString(keyBytes)
+
+		// Hash
+		hash := fmt.Sprintf("sha256:%x", sha256Sum([]byte(plainKey)))
+
+		// Load users.json
+		uf, err := auth.LoadUsers(usersPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Check for duplicate ID
+		for _, k := range uf.APIKeys {
+			if k.ID == *name {
+				fmt.Fprintf(os.Stderr, "Error: API key with ID %q already exists\n", *name)
+				os.Exit(1)
+			}
+		}
+
+		apiKey := auth.APIKey{
+			ID:        *name,
+			Name:      *name,
+			KeyHash:   hash,
+			Role:      *role,
+			Scopes:    []string(scopes),
+			CreatedAt: time.Now().UTC().Format(time.RFC3339),
+		}
+
+		uf.APIKeys = append(uf.APIKeys, apiKey)
+		if err := auth.SaveUsers(usersPath, uf); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("API key created: %s\n", *name)
+		fmt.Printf("Role: %s\n", *role)
+		if len(scopes) > 0 {
+			fmt.Printf("Scopes: %s\n", strings.Join(scopes, ", "))
+		}
+		fmt.Printf("\n🔑 Key (shown ONCE, save it now):\n%s\n", plainKey)
+
+	case "list-keys":
+		uf, err := auth.LoadUsers(usersPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(uf.APIKeys) == 0 {
+			fmt.Println("No API keys configured.")
+			return
+		}
+
+		fmt.Printf("%-20s %-10s %-30s %s\n", "ID", "ROLE", "SCOPES", "CREATED")
+		fmt.Println(strings.Repeat("-", 80))
+		for _, k := range uf.APIKeys {
+			scopeStr := "*"
+			if len(k.Scopes) > 0 {
+				scopeStr = strings.Join(k.Scopes, ", ")
+			}
+			created := k.CreatedAt
+			if created == "" {
+				created = "-"
+			}
+			fmt.Printf("%-20s %-10s %-30s %s\n", k.ID, k.Role, scopeStr, created)
+		}
+
+	case "revoke-key":
+		fs := flag.NewFlagSet("auth revoke-key", flag.ExitOnError)
+		id := fs.String("id", "", "Key ID to revoke")
+		fs.Parse(args)
+
+		if *id == "" {
+			fmt.Fprintf(os.Stderr, "Error: --id is required\n")
+			os.Exit(1)
+		}
+
+		uf, err := auth.LoadUsers(usersPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		found := false
+		var remaining []auth.APIKey
+		for _, k := range uf.APIKeys {
+			if k.ID == *id {
+				found = true
+				continue
+			}
+			remaining = append(remaining, k)
+		}
+
+		if !found {
+			fmt.Fprintf(os.Stderr, "Error: API key %q not found\n", *id)
+			os.Exit(1)
+		}
+
+		uf.APIKeys = remaining
+		if err := auth.SaveUsers(usersPath, uf); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("API key %q revoked.\n", *id)
+
+	case "magic-link":
+		fs := flag.NewFlagSet("auth magic-link", flag.ExitOnError)
+		userID := fs.String("user", "", "User ID")
+		expires := fs.Int("expires", 15, "Expiry in minutes")
+		fs.Parse(args)
+
+		if *userID == "" {
+			fmt.Fprintf(os.Stderr, "Error: --user is required\n")
+			os.Exit(1)
+		}
+
+		// Verify user exists
+		uf, err := auth.LoadUsers(usersPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		found := false
+		for _, u := range uf.Users {
+			if u.ID == *userID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			fmt.Fprintf(os.Stderr, "Error: user %q not found in users.json\n", *userID)
+			os.Exit(1)
+		}
+
+		// Open bbolt to create magic link (use a short timeout — server may hold the lock)
+		dataDir := filepath.Join(rootDir, "data")
+		os.MkdirAll(dataDir, 0755)
+		dbPath := filepath.Join(dataDir, "sessions.db")
+
+		db, err := openBoltDB(dbPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: cannot open sessions.db (is the server running?)\n")
+			fmt.Fprintf(os.Stderr, "Hint: use the admin API instead: curl -X POST -H 'Authorization: Bearer <key>' -d '{\"user_id\":\"%s\",\"expires_minutes\":%d}' https://<domain>/api/auth/magic-link\n", *userID, *expires)
+			os.Exit(1)
+		}
+		defer db.Close()
+
+		mlStore, err := auth.NewMagicLinkStore(db)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening magic link store: %v\n", err)
+			os.Exit(1)
+		}
+
+		token, err := mlStore.Create(*userID, *expires)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating magic link: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Get domain from config
+		domain := "localhost"
+		configPath := filepath.Join(rootDir, "config.json")
+		if cfgData, err := os.ReadFile(configPath); err == nil {
+			var cfg map[string]interface{}
+			if json.Unmarshal(cfgData, &cfg) == nil {
+				if authURL, ok := cfg["authUrl"].(string); ok && authURL != "" {
+					authURL = strings.TrimPrefix(authURL, "https://")
+					authURL = strings.TrimPrefix(authURL, "http://")
+					if idx := strings.Index(authURL, "/"); idx > 0 {
+						domain = authURL[:idx]
+					}
+				}
+			}
+		}
+
+		fmt.Printf("Magic link for user %q (expires in %d minutes):\n", *userID, *expires)
+		fmt.Printf("https://%s/auth/magic?ml_token=%s\n", domain, token)
+
+	case "list-users":
+		uf, err := auth.LoadUsers(usersPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(uf.Users) == 0 {
+			fmt.Println("No users configured.")
+			return
+		}
+
+		fmt.Printf("%-15s %-20s %-25s %-10s %s\n", "ID", "NAME", "EMAIL", "ROLE", "IDENTITIES")
+		fmt.Println(strings.Repeat("-", 90))
+		for _, u := range uf.Users {
+			identStr := fmt.Sprintf("%d", len(u.Identities))
+			for _, id := range u.Identities {
+				identStr += fmt.Sprintf(" (%s:%s)", id.Provider, id.ProviderID)
+			}
+			email := u.Email
+			if email == "" {
+				email = "-"
+			}
+			fmt.Printf("%-15s %-20s %-25s %-10s %s\n", u.ID, u.Name, email, u.Role, identStr)
+		}
+
+	case "add-user":
+		fs := flag.NewFlagSet("auth add-user", flag.ExitOnError)
+		id := fs.String("id", "", "User ID")
+		name := fs.String("name", "", "Display name")
+		role := fs.String("role", "user", "Role: admin, user, viewer")
+		email := fs.String("email", "", "Email address")
+		telegram := fs.String("telegram", "", "Telegram user ID")
+		fs.Parse(args)
+
+		if *id == "" || *name == "" {
+			fmt.Fprintf(os.Stderr, "Error: --id and --name are required\n")
+			os.Exit(1)
+		}
+
+		uf, err := auth.LoadUsers(usersPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error loading users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		// Check duplicate
+		for _, u := range uf.Users {
+			if u.ID == *id {
+				fmt.Fprintf(os.Stderr, "Error: user %q already exists\n", *id)
+				os.Exit(1)
+			}
+		}
+
+		user := auth.UserRecord{
+			ID:   *id,
+			Name: *name,
+			Role: *role,
+		}
+		if *email != "" {
+			user.Email = *email
+		}
+		if *telegram != "" {
+			user.Identities = append(user.Identities, auth.UserIdentity{
+				Provider:   "telegram",
+				ProviderID: *telegram,
+			})
+		}
+
+		uf.Users = append(uf.Users, user)
+		if err := auth.SaveUsers(usersPath, uf); err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving users.json: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("User %q added (role: %s)\n", *id, *role)
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown auth command: %s\n", subcmd)
+		fmt.Fprintf(os.Stderr, "Usage: vel auth <create-key|list-keys|revoke-key|magic-link|list-users|add-user>\n")
+		os.Exit(1)
+	}
+}
+
+// multiFlag implements flag.Value for repeatable string flags.
+type multiFlag []string
+
+func (f *multiFlag) String() string { return strings.Join(*f, ", ") }
+func (f *multiFlag) Set(value string) error {
+	*f = append(*f, value)
+	return nil
+}
+
+// sha256Sum returns the SHA-256 hash of data.
+func sha256Sum(data []byte) [32]byte {
+	return sha256.Sum256(data)
+}
+
+// openBoltDB opens a bbolt database with a 2-second timeout.
+// Returns an error if the database is locked (e.g., by the running server).
+func openBoltDB(path string) (*bolt.DB, error) {
+	return bolt.Open(path, 0o600, &bolt.Options{Timeout: 2 * time.Second})
+}
+
 func runStart(args []string) {
 	fs := flag.NewFlagSet("start", flag.ExitOnError)
 	portFlag := fs.Int("port", 0, "Override server port")
@@ -791,6 +1110,55 @@ func runStart(args []string) {
 				}
 				authManager.RegisterProvider(auth.NewAPIKeyProvider(userStore))
 				fmt.Println("[Auth] Registered provider: api_key")
+
+				// Magic link provider + store (shares sessions.db)
+				mlStore, mlErr := auth.NewMagicLinkStore(sessStore.DB())
+				if mlErr != nil {
+					log.Printf("[Auth] WARNING: Failed to init magic link store: %v", mlErr)
+				} else {
+					authManager.SetMagicLinkStore(mlStore)
+					authManager.RegisterProvider(auth.NewMagicLinkProvider(mlStore, userStore))
+					fmt.Println("[Auth] Registered provider: magic_link")
+
+					// Read magic_link config from config.json
+					var rawCfg map[string]json.RawMessage
+					if json.Unmarshal(configData, &rawCfg) == nil {
+						if authRaw, ok := rawCfg["auth"]; ok {
+							var authCfg map[string]json.RawMessage
+							if json.Unmarshal(authRaw, &authCfg) == nil {
+								if provRaw, ok := authCfg["providers"]; ok {
+									var providers map[string]json.RawMessage
+									if json.Unmarshal(provRaw, &providers) == nil {
+										if mlRaw, ok := providers["magic_link"]; ok {
+											var mlCfgJSON struct {
+												Enabled       bool `json:"enabled"`
+												ExpiryMinutes int  `json:"expiry_minutes"`
+												Email         struct {
+													Enabled bool   `json:"enabled"`
+													From    string `json:"from"`
+												} `json:"email"`
+											}
+											if json.Unmarshal(mlRaw, &mlCfgJSON) == nil && mlCfgJSON.Enabled {
+												expiry := mlCfgJSON.ExpiryMinutes
+												if expiry <= 0 {
+													expiry = 15
+												}
+												authManager.SetMagicLinkConfig(&auth.MagicLinkConfig{
+													Enabled:       true,
+													ExpiryMinutes: expiry,
+													EmailEnabled:  mlCfgJSON.Email.Enabled,
+													EmailFrom:     mlCfgJSON.Email.From,
+												})
+												fmt.Printf("[Auth] Magic link config: expiry=%dm, email=%v\n", expiry, mlCfgJSON.Email.Enabled)
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+
 				fmt.Println("[Auth] New auth system active (session-based)")
 
 				// Start periodic session cleanup
