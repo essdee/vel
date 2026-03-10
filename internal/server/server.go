@@ -785,6 +785,21 @@ func NewServer(cfg *Config) http.Handler {
 
 	// Magic link validation endpoint — PUBLIC
 	mux.HandleFunc("/auth/magic", func(w http.ResponseWriter, r *http.Request) {
+		// Prevent proxy/browser caching of auth responses
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+
+		// Block bot/crawler prefetch (Telegram, WhatsApp, Slack, etc.)
+		// These fetch URLs for link previews and would consume single-use tokens.
+		ua := strings.ToLower(r.UserAgent())
+		if strings.Contains(ua, "telegrambot") || strings.Contains(ua, "whatsapp") ||
+			strings.Contains(ua, "slackbot") || strings.Contains(ua, "discordbot") ||
+			strings.Contains(ua, "facebookexternalhit") || strings.Contains(ua, "twitterbot") ||
+			strings.Contains(ua, "linkedinbot") || strings.Contains(ua, "bot") && strings.Contains(ua, "http") {
+			w.WriteHeader(204)
+			return
+		}
+
 		if !authLimiter.allow(getClientIP(r)) {
 			http.Error(w, "Too many requests", 429)
 			return
