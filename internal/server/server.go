@@ -394,8 +394,8 @@ func NewServer(cfg *Config) http.Handler {
 			}
 			json.NewDecoder(r.Body).Decode(&body)
 			if body.InitData == "" {
-				writeJSON(w, map[string]interface{}{"ok": false})
 				w.WriteHeader(401)
+				writeJSON(w, map[string]interface{}{"ok": false})
 				return
 			}
 			user := auth.ValidateInitData(body.InitData)
