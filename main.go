@@ -16,10 +16,13 @@ import (
 	"strings"
 	"time"
 
+	"log/slog"
+
 	"vel/internal/apps"
 	"vel/internal/auth"
 	"vel/internal/build"
 	"vel/internal/datasource"
+	veldebug "vel/internal/debug"
 	"vel/internal/hooks"
 	"vel/internal/panels"
 	"vel/internal/server"
@@ -1044,6 +1047,50 @@ func runStart(args []string) {
 		panelDisabled = []string{}
 	}
 
+	// ── Debug Infrastructure ──
+	// Load debug config from config.json "debug" section + env vars
+	var debugCfgMap map[string]interface{}
+	{
+		var rawCfg map[string]json.RawMessage
+		if json.Unmarshal(configData, &rawCfg) == nil {
+			if debugRaw, ok := rawCfg["debug"]; ok {
+				json.Unmarshal(debugRaw, &debugCfgMap)
+			}
+		}
+	}
+	debugCfg := veldebug.LoadConfig(debugCfgMap)
+
+	// Create slog logger
+	var slogLevel slog.Level
+	switch debugCfg.LogLevel {
+	case "debug":
+		slogLevel = slog.LevelDebug
+	case "warn":
+		slogLevel = slog.LevelWarn
+	case "error":
+		slogLevel = slog.LevelError
+	default:
+		slogLevel = slog.LevelInfo
+	}
+
+	var slogHandler slog.Handler
+	if debugCfg.LogFormat == "text" {
+		slogHandler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slogLevel})
+	} else {
+		slogHandler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slogLevel})
+	}
+	debugLogger := slog.New(slogHandler)
+
+	// Initialize debug subsystem (sets global flags, creates ring buffer if AI debug)
+	veldebug.Init(debugCfg, debugLogger)
+
+	if debugCfg.Enabled {
+		fmt.Printf("[Debug] Debug mode enabled (log_format=%s, log_level=%s)\n", debugCfg.LogFormat, debugCfg.LogLevel)
+	}
+	if debugCfg.AIDebug {
+		fmt.Printf("[Debug] AI debug mode enabled (buffer_size=%d)\n", debugCfg.BufferSize)
+	}
+
 	cfg := &server.Config{
 		RootDir:      rootDir,
 		Workspace:    workspace,
@@ -1058,10 +1105,74 @@ func runStart(args []string) {
 		Hooks:        hookEngine,
 		DSManager:    dsManager,
 		AuthManager:  authManager,
+		DebugCfg:     debugCfg,
+		DebugLogger:  debugLogger,
 	}
 
 	handler := server.NewServer(cfg)
 	hookEngine.Emit("core.server.ready")
+
+	// Start debug server after main server setup (needs route info)
+	if debugCfg.Enabled {
+		// Build full config map for debug endpoint (redacted)
+		var fullConfig map[string]interface{}
+		json.Unmarshal(configData, &fullConfig)
+
+		// Collect routes from mux (approximate — list known routes)
+		routes := []string{
+			"/", "/dashboard", "/login", "/auth/login",
+			"/public/", "/core/vendor/",
+			"/api/panels", "/api/panels/", "/api/config", "/api/auth",
+			"/api/tokens", "/api/version", "/api/mode", "/api/health",
+			"/api/usage/refresh", "/api/crons/action",
+			"/auth/telegram/callback", "/auth/token", "/auth/dev",
+			"/auth/magic", "/auth/logout",
+			"/api/auth/magic-link", "/api/auth/magic-link/request",
+			"/api/auth/users", "/api/auth/keys",
+			"/api/sources", "/api/source/",
+			"/api/updates/check", "/api/updates/apply",
+			"/api/gateway/restart", "/api/verify-status", "/api/errors",
+			"/ws/metrics",
+		}
+		// Add app routes
+		for _, app := range discoveredApps {
+			for urlPrefix := range app.Routes {
+				routes = append(routes, urlPrefix)
+			}
+		}
+
+		middlewareList := []string{
+			"RecoveryMiddleware",
+			"RequestIDMiddleware",
+			"RequestLoggerMiddleware",
+		}
+		if authManager != nil {
+			middlewareList = append(middlewareList,
+				"SessionMiddleware",
+				"AuthMiddleware",
+				"RequireAuthPaths",
+			)
+		}
+		middlewareList = append(middlewareList, "SecurityHeaders", "Gzip")
+
+		var sessionCountFn func() (int, time.Time, time.Time)
+		if authManager != nil {
+			sessionCountFn = func() (int, time.Time, time.Time) {
+				return authManager.SessionStore().Stats()
+			}
+		}
+
+		veldebug.SetServerInfo(&veldebug.ServerInfo{
+			Version:        version,
+			StartTime:      time.Now(),
+			Config:         fullConfig,
+			Routes:         routes,
+			Middleware:      middlewareList,
+			SessionCountFn: sessionCountFn,
+		})
+
+		veldebug.StartDebugServer(debugCfg)
+	}
 
 	addr := fmt.Sprintf(":%d", port)
 	fmt.Printf("[Server] Vel v%s running on http://0.0.0.0%s\n\n", version, addr)

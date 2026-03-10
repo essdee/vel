@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"vel/internal/auth"
+	veldebug "vel/internal/debug"
 )
 
 // contextKey is a private type for context keys to avoid collisions.
@@ -41,6 +42,17 @@ func SessionMiddleware(mgr *auth.AuthManager) func(http.Handler) http.Handler {
 			sess, err := mgr.GetSession(r)
 			if err == nil && sess != nil && !sess.IsExpired() {
 				r = setIdentity(r, sess.Identity)
+				veldebug.DebugLog(r.Context(), "sessionMiddleware", "session_found",
+					"user_id", sess.Identity.UserID, "provider", sess.Identity.Provider)
+				ctx := veldebug.AppendMiddlewareLog(r.Context(), "sessionMiddleware", "session_found",
+					map[string]any{"user_id": sess.Identity.UserID, "provider": sess.Identity.Provider})
+				// Set identity for request logger
+				ctx = veldebug.SetIdentityForLog(ctx, sess.Identity.UserID)
+				r = r.WithContext(ctx)
+			} else {
+				veldebug.DebugLog(r.Context(), "sessionMiddleware", "no_session")
+				ctx := veldebug.AppendMiddlewareLog(r.Context(), "sessionMiddleware", "no_session", nil)
+				r = r.WithContext(ctx)
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -56,6 +68,9 @@ func AuthMiddleware(mgr *auth.AuthManager) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip if already authenticated by session middleware
 			if GetIdentity(r) != nil {
+				veldebug.DebugLog(r.Context(), "authMiddleware", "skip_already_authenticated")
+				ctx := veldebug.AppendMiddlewareLog(r.Context(), "authMiddleware", "skip_already_authenticated", nil)
+				r = r.WithContext(ctx)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -64,6 +79,12 @@ func AuthMiddleware(mgr *auth.AuthManager) func(http.Handler) http.Handler {
 			identity, _, err := mgr.Authenticate(r)
 			if err == nil && identity != nil {
 				r = setIdentity(r, identity)
+				veldebug.DebugLog(r.Context(), "authMiddleware", "authenticated",
+					"provider", identity.Provider, "user_id", identity.UserID)
+				ctx := veldebug.AppendMiddlewareLog(r.Context(), "authMiddleware", "authenticated",
+					map[string]any{"provider": identity.Provider, "user_id": identity.UserID})
+				ctx = veldebug.SetIdentityForLog(ctx, identity.UserID)
+				r = r.WithContext(ctx)
 
 				// Create session for non-stateless providers (not api_key)
 				if identity.Provider != "api_key" {
@@ -72,6 +93,12 @@ func AuthMiddleware(mgr *auth.AuthManager) func(http.Handler) http.Handler {
 						setSessionCookie(w, mgr, sess.ID)
 					}
 				}
+			} else {
+				veldebug.DebugLog(r.Context(), "authMiddleware", "no_authentication",
+					"reason", "no valid credentials")
+				ctx := veldebug.AppendMiddlewareLog(r.Context(), "authMiddleware", "no_authentication",
+					map[string]any{"reason": "no valid credentials"})
+				r = r.WithContext(ctx)
 			}
 
 			next.ServeHTTP(w, r)
@@ -194,11 +221,21 @@ func isPublicPath(path string) bool {
 func RequireAuthPaths(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isPublicPath(r.URL.Path) {
+			veldebug.DebugLog(r.Context(), "requireAuthPaths", "public_path_bypass",
+				"path", r.URL.Path)
+			ctx := veldebug.AppendMiddlewareLog(r.Context(), "requireAuthPaths", "public_path_bypass",
+				map[string]any{"path": r.URL.Path})
+			r = r.WithContext(ctx)
 			next.ServeHTTP(w, r)
 			return
 		}
 		if GetIdentity(r) == nil {
 			if isBrowserRequest(r) {
+				veldebug.DebugLog(r.Context(), "requireAuthPaths", "redirect_to_login",
+					"path", r.URL.Path)
+				ctx := veldebug.AppendMiddlewareLog(r.Context(), "requireAuthPaths", "redirect_to_login",
+					map[string]any{"path": r.URL.Path})
+				r = r.WithContext(ctx)
 				redirectPath := r.URL.Path
 				if r.URL.RawQuery != "" {
 					redirectPath += "?" + r.URL.RawQuery
@@ -206,11 +243,19 @@ func RequireAuthPaths(next http.Handler) http.Handler {
 				http.Redirect(w, r, "/login?redirect="+redirectPath, http.StatusFound)
 				return
 			}
+			veldebug.DebugLog(r.Context(), "requireAuthPaths", "unauthorized",
+				"path", r.URL.Path)
+			ctx := veldebug.AppendMiddlewareLog(r.Context(), "requireAuthPaths", "unauthorized",
+				map[string]any{"path": r.URL.Path})
+			r = r.WithContext(ctx)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
 			w.Write([]byte(`{"error":"Unauthorized"}`))
 			return
 		}
+		veldebug.DebugLog(r.Context(), "requireAuthPaths", "authenticated_pass")
+		ctx := veldebug.AppendMiddlewareLog(r.Context(), "requireAuthPaths", "authenticated_pass", nil)
+		r = r.WithContext(ctx)
 		next.ServeHTTP(w, r)
 	})
 }

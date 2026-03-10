@@ -17,10 +17,13 @@ import (
 	"sync"
 	"time"
 
+	"log/slog"
+
 	"vel/internal/apps"
 	"vel/internal/auth"
 	"vel/internal/data"
 	"vel/internal/datasource"
+	veldebug "vel/internal/debug"
 	"vel/internal/hooks"
 	"vel/internal/panels"
 	"vel/internal/verify"
@@ -44,6 +47,8 @@ type Config struct {
 	Hooks        *hooks.Engine
 	DSManager    *datasource.Manager
 	AuthManager  *auth.AuthManager // new auth system (nil = legacy mode)
+	DebugCfg     veldebug.DebugConfig
+	DebugLogger  *slog.Logger
 }
 
 type rateLimiter struct {
@@ -796,11 +801,15 @@ func NewServer(cfg *Config) http.Handler {
 			strings.Contains(ua, "slackbot") || strings.Contains(ua, "discordbot") ||
 			strings.Contains(ua, "facebookexternalhit") || strings.Contains(ua, "twitterbot") ||
 			strings.Contains(ua, "linkedinbot") || strings.Contains(ua, "bot") && strings.Contains(ua, "http") {
+			veldebug.DebugLog(r.Context(), "botFilter", "blocked",
+				"user_agent", r.UserAgent(), "reason", "bot user-agent detected")
 			w.WriteHeader(204)
 			return
 		}
 
 		if !authLimiter.allow(getClientIP(r)) {
+			veldebug.DebugLog(r.Context(), "rateLimiter", "limited",
+				"client_ip", getClientIP(r))
 			http.Error(w, "Too many requests", 429)
 			return
 		}
@@ -1479,8 +1488,24 @@ func NewServer(cfg *Config) http.Handler {
 		handler = SessionMiddleware(cfg.AuthManager)(handler)
 	}
 
-	// Wrap with middleware: recovery (outermost) → security/gzip → auth → mux.
-	return recoveryMiddleware(applyMiddleware(handler), cfg)
+	// Debug middleware chain (outermost first):
+	// RecoveryMiddleware → RequestIDMiddleware → RequestLoggerMiddleware → [auth] → mux
+	debugLogger := cfg.DebugLogger
+	if debugLogger == nil {
+		debugLogger = slog.Default()
+	}
+
+	// Request logger (Layer 1: always-on)
+	handler = veldebug.RequestLoggerMiddleware(debugLogger, cfg.DebugCfg)(handler)
+
+	// Request ID (Layer 1: always-on)
+	handler = veldebug.RequestIDMiddleware(handler)
+
+	// Panic recovery (Layer 1: always-on, outermost)
+	handler = veldebug.RecoveryMiddleware(debugLogger)(handler)
+
+	// Wrap with security headers + gzip (applied inside recovery)
+	return applyMiddleware(handler)
 }
 
 // checkAuth checks authentication using the new AuthManager if available,

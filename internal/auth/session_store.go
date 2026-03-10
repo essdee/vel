@@ -20,6 +20,8 @@ type SessionStore interface {
 	Delete(id string) error
 	// Cleanup removes all expired sessions.
 	Cleanup() error
+	// Stats returns active session count and oldest/newest creation times.
+	Stats() (active int, oldest, newest time.Time)
 }
 
 // BoltSessionStore implements SessionStore using bbolt.
@@ -112,6 +114,35 @@ func (s *BoltSessionStore) Delete(id string) error {
 		}
 		return b.Delete([]byte(id))
 	})
+}
+
+// Stats returns the count of active (non-expired) sessions and the oldest/newest creation times.
+func (s *BoltSessionStore) Stats() (active int, oldest, newest time.Time) {
+	now := time.Now()
+	_ = s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(sessionsBucket)
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) error {
+			var sess Session
+			if err := json.Unmarshal(v, &sess); err != nil {
+				return nil
+			}
+			if now.After(sess.ExpiresAt) {
+				return nil // expired
+			}
+			active++
+			if oldest.IsZero() || sess.CreatedAt.Before(oldest) {
+				oldest = sess.CreatedAt
+			}
+			if newest.IsZero() || sess.CreatedAt.After(newest) {
+				newest = sess.CreatedAt
+			}
+			return nil
+		})
+	})
+	return
 }
 
 // Cleanup scans all sessions and deletes any that have expired.
