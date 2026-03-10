@@ -18,6 +18,13 @@ type ServerInfo struct {
 	Middleware []string               // ordered middleware list
 	// Callbacks for dynamic data
 	SessionCountFn func() (active int, oldest, newest time.Time)
+	// For in-process verify: raw mux (no auth middleware) and full handler (with auth)
+	Mux     http.Handler // raw mux without auth middleware
+	Handler http.Handler // full handler with auth middleware
+	// Server config for verify
+	RootDir  string
+	Port     int
+	AuthMode string // "none", "token", "telegram"
 }
 
 var serverInfo *ServerInfo
@@ -35,6 +42,7 @@ func RegisterEndpoints(mux *http.ServeMux, cfg DebugConfig) {
 	mux.HandleFunc("/debug/config", handleConfig)
 	mux.HandleFunc("/debug/middleware", handleMiddleware)
 	mux.HandleFunc("/debug/sessions", handleSessions)
+	mux.HandleFunc("/debug/verify", handleVerify)
 
 	// Layer 3: AI Debug endpoints
 	if cfg.AIDebug {

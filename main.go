@@ -207,7 +207,7 @@ func runVerify(args []string) {
 
 	// ── Human-readable output ──
 	// Group checks by category
-	var coreChecks, panelChecks, dataChecks, frameworkChecks, authProbeChecks, endpointChecks, appVerifyChecks, otherChecks []verify.CheckResult
+	var coreChecks, panelChecks, dataChecks, runtimeEndpointChecks, runtimeAuthChecks, appVerifyChecks, runtimeSkippedChecks, otherChecks []verify.CheckResult
 
 	for _, c := range result.Checks {
 		switch {
@@ -215,12 +215,12 @@ func runVerify(args []string) {
 			panelChecks = append(panelChecks, c)
 		case strings.HasPrefix(c.Name, "data:"):
 			dataChecks = append(dataChecks, c)
-		case c.Name == "server.reachable":
-			frameworkChecks = append(frameworkChecks, c)
-		case c.Name == "auth.probe":
-			authProbeChecks = append(authProbeChecks, c)
-		case strings.HasPrefix(c.Name, "endpoint:"):
-			endpointChecks = append(endpointChecks, c)
+		case strings.HasPrefix(c.Name, "runtime:endpoint:"):
+			runtimeEndpointChecks = append(runtimeEndpointChecks, c)
+		case strings.HasPrefix(c.Name, "runtime:auth_enforced:"):
+			runtimeAuthChecks = append(runtimeAuthChecks, c)
+		case c.Name == "runtime":
+			runtimeSkippedChecks = append(runtimeSkippedChecks, c)
 		case strings.HasPrefix(c.Name, "app:"):
 			appVerifyChecks = append(appVerifyChecks, c)
 		case c.Name == "config" || c.Name == "auth" || c.Name == "openclaw-cli" ||
@@ -241,6 +241,8 @@ func runVerify(args []string) {
 		// Strip prefixes for display
 		label = strings.TrimPrefix(label, "panel:")
 		label = strings.TrimPrefix(label, "data:")
+		label = strings.TrimPrefix(label, "runtime:endpoint:")
+		label = strings.TrimPrefix(label, "runtime:auth_enforced:")
 		label = strings.TrimPrefix(label, "endpoint:")
 		label = strings.TrimPrefix(label, "app:")
 
@@ -269,21 +271,6 @@ func runVerify(args []string) {
 	}
 
 	// Framework (server up)
-	if len(frameworkChecks) > 0 {
-		fmt.Println("\n  Framework:")
-		for _, c := range frameworkChecks {
-			printCheck(c)
-		}
-	}
-
-	// Auth probe
-	if len(authProbeChecks) > 0 {
-		fmt.Println("\n  Auth probe:")
-		for _, c := range authProbeChecks {
-			printCheck(c)
-		}
-	}
-
 	// Panels
 	if len(panelChecks) > 0 {
 		fmt.Println("\n  Panels:")
@@ -300,15 +287,31 @@ func runVerify(args []string) {
 		}
 	}
 
-	// Endpoint checks
-	if len(endpointChecks) > 0 {
-		fmt.Println("\n  Endpoints:")
-		for _, c := range endpointChecks {
+	// Runtime: skipped notice (when server not running)
+	if len(runtimeSkippedChecks) > 0 {
+		fmt.Println("\n  Runtime (via debug server):")
+		for _, c := range runtimeSkippedChecks {
 			printCheck(c)
 		}
 	}
 
-	// App verify.json checks
+	// Runtime: endpoint data correctness
+	if len(runtimeEndpointChecks) > 0 {
+		fmt.Println("\n  Endpoints (in-server):")
+		for _, c := range runtimeEndpointChecks {
+			printCheck(c)
+		}
+	}
+
+	// Runtime: auth enforcement
+	if len(runtimeAuthChecks) > 0 {
+		fmt.Println("\n  Auth enforcement (in-server):")
+		for _, c := range runtimeAuthChecks {
+			printCheck(c)
+		}
+	}
+
+	// App verify.json checks (both static file_exists and runtime http_get)
 	if len(appVerifyChecks) > 0 {
 		fmt.Println("\n  App checks (verify.json):")
 		for _, c := range appVerifyChecks {
@@ -633,7 +636,8 @@ func startTestServer(rootDir string, discoveredApps []*apps.App, fixture string)
 		DSManager:    dsManager,
 	}
 
-	handler := server.NewServer(cfg)
+	srvResult := server.NewServer(cfg)
+	handler := srvResult.Handler
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -1109,7 +1113,8 @@ func runStart(args []string) {
 		DebugLogger:  debugLogger,
 	}
 
-	handler := server.NewServer(cfg)
+	srvResult := server.NewServer(cfg)
+	handler := srvResult.Handler
 	hookEngine.Emit("core.server.ready")
 
 	// Start debug server after main server setup (needs route info)
@@ -1169,6 +1174,11 @@ func runStart(args []string) {
 			Routes:         routes,
 			Middleware:      middlewareList,
 			SessionCountFn: sessionCountFn,
+			Mux:            srvResult.Mux,
+			Handler:        srvResult.Handler,
+			RootDir:        rootDir,
+			Port:           port,
+			AuthMode:       authMode,
 		})
 
 		veldebug.StartDebugServer(debugCfg)

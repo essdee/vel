@@ -147,7 +147,13 @@ func (hc *healthCacher) get(cfg *Config) json.RawMessage {
 	return hc.result
 }
 
-func NewServer(cfg *Config) http.Handler {
+// ServerResult holds the handlers returned by NewServer.
+type ServerResult struct {
+	Handler http.Handler // full handler with all middleware
+	Mux     http.Handler // raw mux without auth middleware (for in-process verify)
+}
+
+func NewServer(cfg *Config) ServerResult {
 	// Initialize error logger before serving any requests.
 	vel.InitErrorLog(filepath.Join(cfg.RootDir, "logs"))
 
@@ -1505,7 +1511,10 @@ func NewServer(cfg *Config) http.Handler {
 	handler = veldebug.RecoveryMiddleware(debugLogger)(handler)
 
 	// Wrap with security headers + gzip (applied inside recovery)
-	return applyMiddleware(handler)
+	return ServerResult{
+		Handler: applyMiddleware(handler),
+		Mux:     mux,
+	}
 }
 
 // checkAuth checks authentication using the new AuthManager if available,
