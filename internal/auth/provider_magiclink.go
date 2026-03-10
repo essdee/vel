@@ -3,7 +3,6 @@ package auth
 import (
 	"fmt"
 	"net/http"
-	"strings"
 )
 
 // MagicLinkCredentials holds the raw token extracted from the request.
@@ -30,17 +29,10 @@ func (p *MagicLinkProvider) Name() string { return "magic_link" }
 
 // Extract checks for ml_token query parameter on requests to /auth/magic.
 func (p *MagicLinkProvider) Extract(r *http.Request) (Credentials, bool) {
-	// Only extract on /auth/magic path
-	if !strings.HasPrefix(r.URL.Path, "/auth/magic") {
-		return nil, false
-	}
-
-	token := r.URL.Query().Get("ml_token")
-	if token == "" || !strings.HasPrefix(token, "vel_ml_") {
-		return nil, false
-	}
-
-	return MagicLinkCredentials{Token: token}, true
+	// Never extract in middleware — /auth/magic has its own handler that
+	// validates the token directly. If we extract here, the middleware
+	// consumes the single-use token before the handler can use it.
+	return nil, false
 }
 
 // Authenticate validates the magic link token and returns an Identity.

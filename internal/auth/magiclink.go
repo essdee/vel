@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+
 	"sync"
 	"time"
 
@@ -109,8 +110,10 @@ func (s *MagicLinkStore) Validate(token string) (string, error) {
 	hash := sha256.Sum256([]byte(token))
 	tokenHash := fmt.Sprintf("sha256:%x", hash)
 
+
 	var foundID string
 	var foundLink MagicLink
+	
 
 	// Find the link by hash
 	err := s.db.View(func(tx *bolt.Tx) error {
@@ -133,6 +136,7 @@ func (s *MagicLinkStore) Validate(token string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("validate magic link: %w", err)
 	}
+
 
 	if foundID == "" {
 		return "", fmt.Errorf("invalid magic link token")
