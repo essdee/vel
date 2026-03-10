@@ -9,9 +9,12 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/go-chi/httplog/v2"
 )
 
 // responseRecorder wraps http.ResponseWriter to capture status code and bytes written.
+// Kept for ring buffer capture — httplog uses its own wrapper internally.
 type responseRecorder struct {
 	http.ResponseWriter
 	status       int
@@ -48,6 +51,12 @@ func (rr *responseRecorder) Flush() {
 	}
 }
 
+// Unwrap implements the http.ResponseWriter unwrap pattern so httplog's
+// WrapResponseWriter can access the underlying writer for Hijack/Flush.
+func (rr *responseRecorder) Unwrap() http.ResponseWriter {
+	return rr.ResponseWriter
+}
+
 // getClientIP extracts the client IP from the request.
 func getClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
@@ -57,10 +66,50 @@ func getClientIP(r *http.Request) string {
 	return r.RemoteAddr
 }
 
-// RequestLoggerMiddleware logs every HTTP request after completion.
-// Smart log levels: 2xx/3xx=info, 4xx=warn, 5xx=error.
+// newHTTPLogger creates a configured httplog.Logger from our DebugConfig.
+func newHTTPLogger(cfg DebugConfig) *httplog.Logger {
+	logLevel := slog.LevelInfo
+	switch strings.ToLower(cfg.LogLevel) {
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "warn":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	}
+
+	useJSON := cfg.LogFormat != "text"
+
+	return httplog.NewLogger("vel", httplog.Options{
+		JSON:           useJSON,
+		LogLevel:       logLevel,
+		Concise:        true,
+		RequestHeaders: true,
+		Tags: map[string]string{
+			"version": "0.1.0",
+		},
+		QuietDownRoutes: []string{
+			"/api/health",
+			"/public/",
+		},
+		QuietDownPeriod: 5 * time.Minute,
+	})
+}
+
+// RequestLoggerMiddleware logs every HTTP request using go-chi/httplog.
+// When AI debug mode is on, it also captures requests into the ring buffer.
+// The logger parameter is kept for API compatibility but httplog manages its own slog.Logger.
 func RequestLoggerMiddleware(logger *slog.Logger, cfg DebugConfig) func(http.Handler) http.Handler {
+	httpLogger := newHTTPLogger(cfg)
+	httplogHandler := httplog.Handler(httpLogger)
+
 	return func(next http.Handler) http.Handler {
+		// If no ring buffer, just use httplog directly — minimal overhead.
+		if !cfg.AIDebug || globalBuffer == nil {
+			return httplogHandler(next)
+		}
+
+		// With ring buffer: wrap to capture request data, then delegate to httplog.
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 
@@ -69,70 +118,38 @@ func RequestLoggerMiddleware(logger *slog.Logger, cfg DebugConfig) func(http.Han
 				status:         200,
 			}
 
-			next.ServeHTTP(rec, r)
+			// httplog handles structured logging; our recorder captures for ring buffer.
+			httplogHandler(next).ServeHTTP(rec, r)
 
 			latency := time.Since(start)
 			requestID := RequestID(r.Context())
 			identity := identityFromContext(r.Context())
 
-			attrs := []slog.Attr{
-				slog.String("request_id", requestID),
-				slog.String("method", r.Method),
-				slog.String("path", r.URL.Path),
-				slog.Int("status", rec.status),
-				slog.Int64("latency_ms", latency.Milliseconds()),
-				slog.String("client_ip", getClientIP(r)),
-				slog.String("user_agent", r.UserAgent()),
-				slog.Int64("bytes_written", rec.bytesWritten),
-				slog.String("identity", identity),
+			entry := RequestLog{
+				RequestID:    requestID,
+				Timestamp:    start,
+				Method:       r.Method,
+				Path:         r.URL.Path,
+				Query:        r.URL.RawQuery,
+				ClientIP:     getClientIP(r),
+				UserAgent:    r.UserAgent(),
+				Identity:     identity,
+				Status:       rec.status,
+				LatencyMs:    latency.Milliseconds(),
+				BytesWritten: rec.bytesWritten,
 			}
 
-			// Determine log level based on status code
-			level := slog.LevelInfo
-			msg := "request"
-			if rec.status >= 500 {
-				level = slog.LevelError
-				msg = "request error"
-			} else if rec.status >= 400 {
-				level = slog.LevelWarn
-				msg = "request warn"
+			// Attach middleware log from context
+			if ml := GetMiddlewareLog(r.Context()); ml != nil {
+				entry.MiddlewareLog = ml
 			}
 
-			// Convert attrs to args
-			args := make([]any, len(attrs))
-			for i, a := range attrs {
-				args[i] = a
+			// Attach handler log from context
+			if hl := GetHandlerLog(r.Context()); hl != nil {
+				entry.HandlerLog = hl
 			}
-			logger.LogAttrs(r.Context(), level, msg, attrs...)
 
-			// If AI debug mode is on, store in ring buffer
-			if cfg.AIDebug && globalBuffer != nil {
-				entry := RequestLog{
-					RequestID:    requestID,
-					Timestamp:    start,
-					Method:       r.Method,
-					Path:         r.URL.Path,
-					Query:        r.URL.RawQuery,
-					ClientIP:     getClientIP(r),
-					UserAgent:    r.UserAgent(),
-					Identity:     identity,
-					Status:       rec.status,
-					LatencyMs:    latency.Milliseconds(),
-					BytesWritten: rec.bytesWritten,
-				}
-
-				// Attach middleware log from context
-				if ml := GetMiddlewareLog(r.Context()); ml != nil {
-					entry.MiddlewareLog = ml
-				}
-
-				// Attach handler log from context
-				if hl := GetHandlerLog(r.Context()); hl != nil {
-					entry.HandlerLog = hl
-				}
-
-				globalBuffer.Add(entry)
-			}
+			globalBuffer.Add(entry)
 		})
 	}
 }
@@ -140,7 +157,6 @@ func RequestLoggerMiddleware(logger *slog.Logger, cfg DebugConfig) func(http.Han
 // identityFromContext tries to extract user identity info from context.
 // This looks for the vel_identity context key set by auth middleware.
 func identityFromContext(ctx context.Context) string {
-	// Try to get identity via the same context key used by auth middleware
 	v := ctx.Value(identityCtxKey)
 	if v == nil {
 		return "anonymous"

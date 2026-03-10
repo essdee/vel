@@ -10,6 +10,8 @@ require (
 )
 
 require (
+	github.com/go-chi/chi/v5 v5.0.10 // indirect
+	github.com/go-chi/httplog/v2 v2.1.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
