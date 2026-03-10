@@ -10,9 +10,9 @@ import (
 )
 
 // contextKey is a private type for context keys to avoid collisions.
-type contextKey string
-
-const identityContextKey contextKey = "vel_identity"
+// identityContextKey must match the key used in pkg/vel/auth.go.
+// We use a plain string (not a typed key) so both packages resolve to the same context value.
+const identityContextKey = "vel_identity"
 
 // GetIdentity extracts the authenticated Identity from the request context.
 // Returns nil if the request is unauthenticated.

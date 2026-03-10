@@ -6,9 +6,9 @@ import (
 )
 
 // contextKey is a private type for context keys to avoid collisions.
-type contextKey string
-
-const identityContextKey contextKey = "vel_identity"
+// identityContextKey must match the key used in internal/server/authmiddleware.go.
+// We use a plain string (not a typed key) so both packages resolve to the same context value.
+const identityContextKey = "vel_identity"
 
 // User represents an authenticated user.
 type User struct {
