@@ -6,12 +6,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"vel/internal/apps"
 	"vel/internal/auth"
@@ -89,6 +92,8 @@ func main() {
 		runCaps(os.Args[2:])
 	case "verify":
 		runVerify(os.Args[2:])
+	case "test":
+		runTest(os.Args[2:])
 	case "version":
 		fmt.Printf("vel %s\n", Version)
 	case "help", "--help", "-h":
@@ -116,6 +121,7 @@ Commands:
   build     Scan apps, check capabilities, compile binary
   caps      List or export app capabilities
   verify    Run health checks on the current installation
+  test      Run tests with fixture data
   version   Print version
   help      Show this help
 
@@ -354,17 +360,304 @@ func runCaps(args []string) {
 	}
 }
 
-func runStart(args []string) {
-	fs := flag.NewFlagSet("start", flag.ExitOnError)
-	portFlag := fs.Int("port", 0, "Override server port")
+// testCheckResult holds the outcome of a single test check.
+type testCheckResult struct {
+	label  string
+	passed bool
+}
+
+// testFixtureResult holds results for one app+fixture combination.
+type testFixtureResult struct {
+	app     string
+	fixture string
+	checks  []testCheckResult
+}
+
+func (r *testFixtureResult) passed() int {
+	n := 0
+	for _, c := range r.checks {
+		if c.passed {
+			n++
+		}
+	}
+	return n
+}
+
+func (r *testFixtureResult) failed() int {
+	n := 0
+	for _, c := range r.checks {
+		if !c.passed {
+			n++
+		}
+	}
+	return n
+}
+
+func runTest(args []string) {
+	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	fs.Parse(args)
 
 	rootDir, _ := os.Getwd()
 
-	// TEST_MODE warning
+	fmt.Printf("\n⚡ Vel Test Runner\n\n")
+
+	// Discover apps
+	discoveredApps, _ := apps.Discover(rootDir)
+	if len(discoveredApps) == 0 {
+		fmt.Println("  No apps found.")
+		os.Exit(0)
+	}
+
+	// Standard fixture names to check
+	allFixtures := []string{"default", "empty", "stress", "demo"}
+
+	var results []testFixtureResult
+	allPassed := true
+
+	for _, a := range discoveredApps {
+		testdataDir := filepath.Join(a.Dir, "testdata")
+		if _, err := os.Stat(testdataDir); err != nil {
+			fmt.Printf("  ⚠ %s — no testdata/ directory, skipping\n", a.Name)
+			continue
+		}
+
+		// Find which fixture directories exist
+		var availableFixtures []string
+		for _, f := range allFixtures {
+			if _, err := os.Stat(filepath.Join(testdataDir, f)); err == nil {
+				availableFixtures = append(availableFixtures, f)
+			}
+		}
+
+		if len(availableFixtures) == 0 {
+			fmt.Printf("  ⚠ %s — testdata/ exists but no fixture directories found\n", a.Name)
+			continue
+		}
+
+		for _, fixture := range availableFixtures {
+			result := testFixtureResult{app: a.Name, fixture: fixture}
+
+			// Start a fresh test server for this fixture
+			port, stop, err := startTestServer(rootDir, discoveredApps, fixture)
+			if err != nil {
+				result.checks = append(result.checks, testCheckResult{
+					label:  fmt.Sprintf("start server: %v", err),
+					passed: false,
+				})
+				results = append(results, result)
+				allPassed = false
+				continue
+			}
+
+			base := fmt.Sprintf("http://localhost:%d", port)
+
+			// Poll /api/health until server is ready (up to 4 seconds)
+			ready := false
+			for i := 0; i < 20; i++ {
+				resp, err := http.Get(base + "/api/health")
+				if err == nil && resp.StatusCode == 200 {
+					resp.Body.Close()
+					ready = true
+					break
+				}
+				if resp != nil {
+					resp.Body.Close()
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+
+			if !ready {
+				result.checks = append(result.checks, testCheckResult{
+					label:  "server not ready (health check timed out after 4s)",
+					passed: false,
+				})
+				stop()
+				results = append(results, result)
+				allPassed = false
+				continue
+			}
+
+			// Check 1: /api/health → 200
+			resp, err := http.Get(base + "/api/health")
+			if err != nil {
+				result.checks = append(result.checks, testCheckResult{label: fmt.Sprintf("GET /api/health: %v", err), passed: false})
+			} else {
+				ok := resp.StatusCode == 200
+				resp.Body.Close()
+				result.checks = append(result.checks, testCheckResult{
+					label:  fmt.Sprintf("GET /api/health → %d", resp.StatusCode),
+					passed: ok,
+				})
+			}
+
+			// Check 2: /dashboard → 200 with HTML
+			resp, err = http.Get(base + "/dashboard")
+			if err != nil {
+				result.checks = append(result.checks, testCheckResult{label: fmt.Sprintf("GET /dashboard: %v", err), passed: false})
+			} else {
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				isHTML := strings.Contains(string(body), "<html") || strings.Contains(string(body), "<!DOCTYPE")
+				ok := resp.StatusCode == 200 && isHTML
+				label := fmt.Sprintf("GET /dashboard → %d", resp.StatusCode)
+				if resp.StatusCode == 200 && !isHTML {
+					label += " (not HTML)"
+				}
+				result.checks = append(result.checks, testCheckResult{label: label, passed: ok})
+			}
+
+			// Check 3: first route of each app → not 500
+			for _, appToCheck := range discoveredApps {
+				for routePath := range appToCheck.Routes {
+					resp, err := http.Get(base + routePath)
+					if err != nil {
+						result.checks = append(result.checks, testCheckResult{
+							label:  fmt.Sprintf("GET %s (%s): %v", routePath, appToCheck.Name, err),
+							passed: false,
+						})
+					} else {
+						resp.Body.Close()
+						ok := resp.StatusCode < 500
+						result.checks = append(result.checks, testCheckResult{
+							label:  fmt.Sprintf("GET %s (%s) → %d", routePath, appToCheck.Name, resp.StatusCode),
+							passed: ok,
+						})
+					}
+					break // only first route per app
+				}
+			}
+
+			stop()
+			results = append(results, result)
+		}
+	}
+
+	// Print results
+	fmt.Printf("\n  Results:\n\n")
+	for _, r := range results {
+		fmt.Printf("  [%s / fixture: %s]\n", r.app, r.fixture)
+		for _, c := range r.checks {
+			if c.passed {
+				fmt.Printf("    ✓ %s\n", c.label)
+			} else {
+				fmt.Printf("    ✗ %s\n", c.label)
+			}
+		}
+		fmt.Printf("    → %d passed, %d failed\n\n", r.passed(), r.failed())
+		if r.failed() > 0 {
+			allPassed = false
+		}
+	}
+
+	if len(results) == 0 {
+		fmt.Println("  No testable apps found (add testdata/ directories to apps)")
+		os.Exit(0)
+	}
+
+	if allPassed {
+		fmt.Println("  ✓ All tests passed")
+	} else {
+		fmt.Println("  ✗ Some tests failed")
+		os.Exit(1)
+	}
+}
+
+// startTestServer starts a minimal vel server on a random port with the given fixture.
+// Returns the port, a stop function, and any error.
+func startTestServer(rootDir string, discoveredApps []*apps.App, fixture string) (int, func(), error) {
+	vel.SetTestMode(true, fixture)
+
+	// Use "none" auth for testing
+	auth.Init("", nil, "vel-test-cookie-secret-not-for-production")
+	auth.InitMode("none", "")
+	auth.InitScopedTokens(nil)
+
+	hookEngine := hooks.New()
+
+	// Create datasource manager and register sources
+	dsManager := datasource.NewManager()
+	for _, a := range discoveredApps {
+		for _, ds := range a.ParsedSources {
+			// Ignore errors — fixture files may not exist for every source
+			_ = dsManager.AddFileSource(a.Name, a.Dir, ds.Name, ds.Path, ds.Interval)
+		}
+	}
+
+	// Build panel app list and discover panels
+	var panelApps []panels.AppInfo
+	for _, a := range discoveredApps {
+		panelApps = append(panelApps, panels.AppInfo{Name: a.Name, Panels: a.Panels, Dir: a.Dir})
+	}
+	registry, _ := panels.DiscoverPanels(rootDir, panelApps)
+
+	cfg := &server.Config{
+		RootDir:      rootDir,
+		Workspace:    filepath.Dir(rootDir),
+		ConfigPath:   filepath.Join(rootDir, "config.json"),
+		Port:         0,
+		Registry:     registry,
+		Order:        []string{},
+		Disabled:     []string{},
+		Version:      Version,
+		PublicConfig: map[string]interface{}{"authMode": "none"},
+		Apps:         discoveredApps,
+		Hooks:        hookEngine,
+		DSManager:    dsManager,
+	}
+
+	handler := server.NewServer(cfg)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		vel.SetTestMode(false, "")
+		return 0, nil, fmt.Errorf("could not bind port: %w", err)
+	}
+
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	dsManager.Start()
+	go http.Serve(ln, handler) //nolint:errcheck
+
+	stop := func() {
+		ln.Close()
+		dsManager.Stop()
+		vel.SetTestMode(false, "")
+	}
+
+	return port, stop, nil
+}
+
+func runStart(args []string) {
+	fs := flag.NewFlagSet("start", flag.ExitOnError)
+	portFlag := fs.Int("port", 0, "Override server port")
+	testModeFlag := fs.Bool("test-mode", false, "Run with test fixture data")
+	fixtureFlag := fs.String("fixture", "default", "Fixture set to use (default, empty, stress, demo)")
+	demoFlag := fs.Bool("demo", false, "Shortcut for --test-mode --fixture=demo")
+	fs.Parse(args)
+
+	rootDir, _ := os.Getwd()
+
+	// Resolve test mode / demo shortcut
+	testMode := *testModeFlag
+	fixtureName := *fixtureFlag
+	if *demoFlag {
+		testMode = true
+		fixtureName = "demo"
+	}
+
+	// TEST_MODE env var warning (legacy)
 	if os.Getenv("TEST_MODE") == "true" {
 		fmt.Println("\n⚠️  TEST_MODE is enabled — auth bypassed")
 		fmt.Println("⚠️  Do NOT use in production.")
+	}
+
+	// Apply test mode state
+	if testMode {
+		vel.SetTestMode(true, fixtureName)
+		fmt.Printf("\n⚡ Vel — TEST MODE\n")
+		fmt.Printf("  Fixture: %s\n", fixtureName)
+		fmt.Printf("  Data sources redirected to testdata/%s/\n", fixtureName)
+		fmt.Printf("\n  ⚠️  Not for production use\n\n")
 	}
 
 	// Load config
@@ -495,7 +788,7 @@ func runStart(args []string) {
 	dsCount := 0
 	for _, a := range discoveredApps {
 		for _, ds := range a.ParsedSources {
-			if err := dsManager.AddFileSource(a.Name, ds.Name, ds.Path, ds.Interval); err != nil {
+			if err := dsManager.AddFileSource(a.Name, a.Dir, ds.Name, ds.Path, ds.Interval); err != nil {
 				fmt.Printf("│   ✗ Data source %s:%s — %s\n", a.Name, ds.Name, err)
 			} else {
 				dsCount++

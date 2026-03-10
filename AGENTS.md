@@ -10,6 +10,9 @@ This file tells AI agents (Claude Code, Codex, etc.) how to work correctly with 
 2. **Always run `vel verify` after making changes** that affect routes, auth, or app files.
 3. **When verify fails, fix the issue, restart if needed, then re-verify.** Do not stop after one pass.
 4. **When building a new app, write `verify.json`** with app-specific checks before calling it done.
+5. **When building a new app, create `testdata/default/` and `testdata/empty/`** with fixture data for all file-based data sources.
+6. **Run `vel test` before committing** to ensure fixture-based integration checks pass.
+7. **If an app has no `testdata/`, `vel test` will warn** but not fail — add fixtures when possible.
 
 ---
 
@@ -126,6 +129,41 @@ Every app should have a `verify.json` in its root directory. This is how agents 
 **`file_exists`** — Checks that a file or directory exists:
 - `path` — path to check
 - `relative_to`: `"app"` (app dir), `"root"` (vel root), `"workspace"` (~/.openclaw/workspace), `"absolute"`
+
+---
+
+## Test Mode & Fixtures
+
+### Running tests
+```bash
+./vel test                          # Run all fixture-based integration tests
+./vel start --test-mode             # Start server with testdata/default/ fixtures
+./vel start --test-mode --fixture=empty  # Use empty fixture set
+./vel start --demo                  # Shortcut: --test-mode --fixture=demo
+```
+
+### When to use test mode
+- Development and local testing without real data files
+- Demo environments
+- CI checks via `vel test` (exits 0 on pass, 1 on failure)
+
+### Adding fixtures for a new app
+
+If your app has file-based data sources in `app.json`, create fixture files:
+
+```
+apps/my-app/
+  testdata/
+    default/          ← realistic sample data (required)
+      my-data.json
+    empty/            ← zero-state data (required)
+      my-data.json
+```
+
+The fixture filename must match the **basename** of the source path.
+For example: `"path": "~/.openclaw/workspace/my-data.json"` → fixture is `testdata/default/my-data.json`.
+
+Apps without file-based data sources still get a `testdata/default/README.md` noting no fixtures are needed.
 
 ---
 

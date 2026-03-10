@@ -77,6 +77,106 @@ Matrix: Go 1.22, 1.23, 1.24 on ubuntu-latest.
 
 ---
 
+---
+
+## Test Mode & Fixtures (Phase 3)
+
+`vel test` and `--test-mode` provide a fixture-based integration testing layer.
+
+### Overview
+
+| Feature | How |
+|---------|-----|
+| `vel start --test-mode` | Starts server with fixture data instead of real files |
+| `vel start --test-mode --fixture=empty` | Uses a specific fixture set |
+| `vel start --demo` | Shortcut: `--test-mode --fixture=demo` |
+| `vel test` | Discovers apps, runs fixture-based checks, reports results |
+
+### Startup banner
+
+When test mode is active, the server prints:
+```
+⚡ Vel — TEST MODE
+  Fixture: default
+  Data sources redirected to testdata/default/
+
+  ⚠️  Not for production use
+```
+
+### How data source path rewriting works
+
+When `vel.IsTestMode()` is true, each `FileSource` checks for a fixture override before reading its real path:
+
+```
+original:  ~/.openclaw/workspace/claude-usage.json
+fixture:   {appDir}/testdata/{fixture}/claude-usage.json
+```
+
+If the fixture file exists, it's used. Otherwise, the original path is used as a fallback.
+This is transparent — apps and panels see the same data shape regardless.
+
+### Creating testdata/ for an app
+
+Each app that has file-based data sources should have:
+
+```
+apps/my-app/
+  testdata/
+    default/          ← realistic sample data
+      my-data.json
+    empty/            ← empty/zero-state data
+      my-data.json
+    stress/           ← large or edge-case data (optional)
+      my-data.json
+    demo/             ← curated demo data (optional)
+      my-data.json
+```
+
+**Fixture set conventions:**
+- `default` — realistic sample data, closest to production shape
+- `empty` — zero state: empty arrays, null values, no records
+- `stress` — large datasets, edge cases, unusual values
+- `demo` — polished, curated data for demonstrations
+
+The fixture filename must match the **basename** of the real source file.
+
+Example: if `app.json` defines `"path": "~/.openclaw/workspace/token-swap-config.json"`,
+the fixture file is `testdata/default/token-swap-config.json`.
+
+### The `vel test` command
+
+`vel test` starts an in-process test server (no subprocess exec) for each app+fixture combination:
+
+1. Discovers all apps
+2. For each app with a `testdata/` directory:
+   - Finds available fixture sets (default, empty, stress, demo)
+   - For each fixture: starts a server on a random port, waits for `/api/health`, runs checks, stops server
+3. Checks per fixture:
+   - `GET /api/health` → 200
+   - `GET /dashboard` → 200 with HTML
+   - `GET {first app route}` → not 5xx
+4. Reports per-app, per-fixture results
+5. Exits 0 if all pass, 1 if any fail
+
+Apps without `testdata/` get a warning but don't fail the run.
+
+### Running vel test
+
+```bash
+# From the vel-staging root
+./vel test
+```
+
+### Demo mode shortcut
+
+```bash
+vel start --demo
+# equivalent to:
+vel start --test-mode --fixture=demo
+```
+
+---
+
 ## Decisions Log
 
 | Decision | Rationale |
@@ -86,3 +186,5 @@ Matrix: Go 1.22, 1.23, 1.24 on ubuntu-latest.
 | No mock frameworks | Interfaces + manual test doubles. Keeps tests readable. |
 | Co-located test files | Go convention. No separate `test/` directory. |
 | Table-driven tests | Go idiom. Reduces boilerplate. |
+| Fixture path rewriting in datasource | Transparent to apps — no API change needed. Basename match keeps it simple. |
+| In-process test server | Shares code with prod binary, no exec overhead, port 0 for random assignment. |

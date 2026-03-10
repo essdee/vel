@@ -4,9 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	vel "vel/pkg/vel"
 )
 
 // StaleInfo describes why a source is stale.
@@ -41,6 +44,7 @@ type FileSource struct {
 	Path     string // absolute, ~ already expanded
 	Interval time.Duration
 	AppName  string
+	AppDir   string // app directory — used for test fixture path rewriting
 
 	mu         sync.RWMutex
 	lastData   json.RawMessage
@@ -79,7 +83,8 @@ func expandTilde(path string) (string, error) {
 }
 
 // AddFileSource registers a file data source.
-func (m *Manager) AddFileSource(appName, name, path string, interval time.Duration) error {
+// appDir is the app's root directory, used for test fixture path rewriting.
+func (m *Manager) AddFileSource(appName, appDir, name, path string, interval time.Duration) error {
 	if interval < time.Second {
 		return fmt.Errorf("interval must be at least 1s, got %s", interval)
 	}
@@ -115,6 +120,7 @@ func (m *Manager) AddFileSource(appName, name, path string, interval time.Durati
 		Path:     expanded,
 		Interval: interval,
 		AppName:  appName,
+		AppDir:   appDir,
 		stopCh:   make(chan struct{}),
 	}
 	return nil
@@ -157,13 +163,30 @@ func (src *FileSource) poll() {
 	}
 }
 
+// getEffectivePath returns the path to read from, redirecting to a fixture
+// file when test mode is active and a fixture override exists.
+func (src *FileSource) getEffectivePath() string {
+	if !vel.IsTestMode() {
+		return src.Path
+	}
+	// Check if a fixture override exists in the app's testdata directory
+	fixturePath := filepath.Join(src.AppDir, "testdata", vel.FixtureName(), filepath.Base(src.Path))
+	if _, err := os.Stat(fixturePath); err == nil {
+		return fixturePath
+	}
+	// Fall back to original path
+	return src.Path
+}
+
 func (src *FileSource) readFile() {
+	effectivePath := src.getEffectivePath()
+
 	var data []byte
 	var err error
 
 	// Try up to 3 times with 50ms delay on JSON parse failure
 	for attempt := 0; attempt < 3; attempt++ {
-		data, err = os.ReadFile(src.Path)
+		data, err = os.ReadFile(effectivePath)
 		if err != nil {
 			// File read error (not found, permission, etc.)
 			break
