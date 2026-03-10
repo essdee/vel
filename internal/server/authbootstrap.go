@@ -17,20 +17,18 @@ const authBootstrapScript = `<script>
   var tg = window.Telegram && window.Telegram.WebApp;
   if (!tg || !tg.initData) return;
   if (document.cookie.indexOf('tg_user=') !== -1) return;
-  // Prevent infinite reload: only try once per page load
   if (sessionStorage.getItem('_vel_auth_tried')) return;
   sessionStorage.setItem('_vel_auth_tried', '1');
-  var x = new XMLHttpRequest();
-  x.open('POST', '/api/auth', false);
-  x.setRequestHeader('Content-Type', 'application/json');
-  x.send(JSON.stringify({initData: tg.initData}));
-  try {
-    var r = JSON.parse(x.responseText);
-    if (r && r.ok) {
+  fetch('/api/auth', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({initData: tg.initData})
+  }).then(function(r){ return r.json(); }).then(function(d){
+    if (d && d.ok) {
       sessionStorage.removeItem('_vel_auth_tried');
       location.reload();
     }
-  } catch(e) {}
+  }).catch(function(){});
 })();
 </script>`
 
