@@ -36,6 +36,28 @@ Request
 
 ---
 
+## Bootstrap Strategy
+
+When setting up a new Vel deployment, you need at least one admin user to manage auth.
+
+### Option 1: Telegram Bootstrap (Recommended)
+1. Add your Telegram user ID to `users.json` with role "admin"
+2. Start the server
+3. Open the dashboard — Telegram auth will create your session
+4. Manage everything from the Auth Settings panel
+
+### Option 2: File Bootstrap
+1. Edit `users.json` directly to add users and identities
+2. The server auto-reloads the file every 30 seconds
+3. No restart needed
+
+### Option 3: Migration Bootstrap
+If upgrading from old Vel auth (allowedTelegramUsers), the framework
+auto-generates `users.json` from your existing config on first startup.
+All migrated users get admin role.
+
+---
+
 ## Configuration
 
 ### config.json auth section
@@ -95,18 +117,6 @@ The user database lives at `users.json` in the vel root directory. It's auto-rel
           "provider_id": "85720317"
         }
       ]
-    },
-    {
-      "id": "nithin",
-      "name": "Nithin",
-      "email": "nithin@essdee.fit",
-      "role": "user",
-      "identities": [
-        {
-          "provider": "telegram",
-          "provider_id": "2031224178"
-        }
-      ]
     }
   ],
   "api_keys": [
@@ -116,8 +126,7 @@ The user database lives at `users.json` in the vel root directory. It's auto-rel
       "key_hash": "sha256:...",
       "role": "viewer",
       "scopes": [
-        "GET /token-swap/api/usage",
-        "GET /token-swap/api/status"
+        "GET /token-swap/api/usage"
       ],
       "created_by": "karthi",
       "created_at": "2026-03-10T12:00:00Z"
@@ -152,7 +161,7 @@ The user database lives at `users.json` in the vel root directory. It's auto-rel
 
 | Role | Access |
 |------|--------|
-| `admin` | Full access. Bypasses all scope checks. Can generate magic links. |
+| `admin` | Full access. Bypasses all scope checks. Can manage users/keys via Admin API. |
 | `user` | Authenticated access to all routes (subject to scope restrictions if via API key). |
 | `viewer` | Read-only access (subject to scope restrictions if via API key). |
 
@@ -185,16 +194,11 @@ Authenticates machine-to-machine requests using bearer tokens.
 
 **Key format:** `vel_ak_live_<hex>` (production) or `vel_ak_test_<hex>` (test)
 
-**Creating keys:**
-```bash
-vel auth create-key --name "usage-share" --role viewer \
-  --scope "GET /token-swap/api/usage" \
-  --scope "GET /token-swap/api/status"
-```
+**Creating keys:** Use the Admin API or Auth Settings panel (see below).
 
 **Using keys:**
 ```bash
-curl -H "Authorization: Bearer vel_ak_live_abc123..." https://example.com/token-swap/api/status
+curl -H "Authorization: Bearer vel_ak_live_abc123..." https://example.com/api/auth/users
 ```
 
 ### 3. Magic Link
@@ -202,7 +206,7 @@ curl -H "Authorization: Bearer vel_ak_live_abc123..." https://example.com/token-
 Passwordless login via one-time URL tokens.
 
 **How it works:**
-1. Admin generates a magic link (CLI or API)
+1. Admin generates a magic link via Admin API or Auth Settings panel
 2. User receives URL with `?ml_token=vel_ml_...`
 3. User visits `/auth/magic?ml_token=vel_ml_...`
 4. Provider SHA-256 hashes the token, validates against stored hash
@@ -254,19 +258,151 @@ API keys can be restricted to specific HTTP method + path combinations.
 | `"GET /path"` | GET on exact path |
 | `"/path"` | Any method on exact path |
 
-### Examples
+### Evaluation
+
+Scopes are checked left-to-right. First matching scope grants access. No match = denied (403). Admin role always bypasses scope checks.
+
+---
+
+## Admin API Reference
+
+All admin endpoints require the `admin` role (via session or API key).
+
+### `GET /api/auth/users`
+
+List all users.
 
 ```json
+// Response
 {
-  "scopes": ["GET /token-swap/api/usage", "GET /token-swap/api/status"]
+  "users": [
+    {"id": "karthi", "name": "Karthikeyan", "email": "karthi@essdee.fit", "role": "admin", "identities": [...]}
+  ]
 }
 ```
 
-This key can only read usage and status data from the token-swap app. Admin role always bypasses scope checks.
+### `POST /api/auth/users`
 
-### Evaluation
+Add a new user.
 
-Scopes are checked left-to-right. First matching scope grants access. No match = denied (403).
+```json
+// Request
+{
+  "id": "vignesh",
+  "name": "Vignesh",
+  "role": "user",
+  "email": "vignesh@example.com",
+  "identities": [{"provider": "telegram", "provider_id": "37211163"}]
+}
+
+// Response
+{"ok": true, "user": {...}}
+```
+
+### `DELETE /api/auth/users?id=vignesh`
+
+Remove a user.
+
+```json
+// Response
+{"ok": true}
+```
+
+### `GET /api/auth/keys`
+
+List all API keys (hashes never exposed).
+
+```json
+// Response
+{
+  "keys": [
+    {"id": "usage-share", "name": "usage-share", "role": "viewer", "scopes": [...], "created_at": "..."}
+  ]
+}
+```
+
+### `POST /api/auth/keys`
+
+Create a new API key. The plaintext key is returned **once** — it cannot be retrieved later.
+
+```json
+// Request
+{"name": "my-key", "role": "viewer", "scopes": ["GET /api/health"]}
+
+// Response
+{"ok": true, "key": "vel_ak_live_...", "id": "my-key"}
+```
+
+### `DELETE /api/auth/keys?id=my-key`
+
+Revoke an API key.
+
+```json
+// Response
+{"ok": true}
+```
+
+### `POST /api/auth/magic-link`
+
+Generate a magic login link (admin only).
+
+```json
+// Request
+{"user_id": "karthi", "expires_minutes": 30}
+
+// Response
+{"ok": true, "url": "https://example.com/auth/magic?ml_token=vel_ml_..."}
+```
+
+### `POST /api/auth/magic-link/request`
+
+**Public** — request a magic link via email. Never returns the URL directly (prevents enumeration).
+
+```json
+// Request
+{"email": "karthi@essdee.fit"}
+
+// Response (always same format)
+{"ok": true, "message": "If that email is registered, a login link was sent."}
+```
+
+---
+
+## Auth Settings Panel
+
+The **Auth Settings** panel (🔐) in the dashboard provides a GUI for all admin auth operations:
+
+- **Users**: View, add, and delete users
+- **API Keys**: View, create (with one-time key display), and revoke keys
+- **Magic Links**: Generate login links for any user
+
+The panel is admin-only — non-admin users will see an error.
+
+---
+
+## Public vs Protected Routes
+
+By default, all routes require authentication. The following paths are public:
+
+| Path | Purpose |
+|------|---------|
+| `/` | Root/landing page |
+| `/login` | Login page |
+| `/auth/login` | Login page (alias) |
+| `/auth/magic` | Magic link validation |
+| `/auth/telegram/callback` | Telegram login callback |
+| `/auth/token` | Token auth endpoint |
+| `/auth/dev` | Dev auth endpoint |
+| `/auth/logout` | Logout |
+| `/api/health` | Health check |
+| `/api/auth` | Auth status |
+| `/api/auth/magic-link/request` | Public magic link request |
+| `/public/*` | Public static assets |
+| `/core/vendor/*` | Vendor libraries |
+| `/custom/theme/*` | Theme assets |
+| `/relay/*` | VelBridge relay |
+
+Everything else requires a valid session or API key.
 
 ---
 
@@ -278,14 +414,11 @@ Scopes are checked left-to-right. First matching scope grants access. No match =
 import "vel/internal/server"
 
 func myHandler(w http.ResponseWriter, r *http.Request) {
-    // Get the authenticated identity (nil if unauthenticated)
     identity := server.GetIdentity(r)
     if identity == nil {
         http.Error(w, "Unauthorized", 401)
         return
     }
-
-    // Use identity fields
     fmt.Println(identity.UserID)   // "karthi"
     fmt.Println(identity.Name)     // "Karthikeyan"
     fmt.Println(identity.Role)     // "admin"
@@ -293,224 +426,29 @@ func myHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Legacy compatibility
-
-The old `auth.Check(r)` function still works and returns a `*auth.User` for backward compatibility. New code should use `server.GetIdentity(r)`.
-
 ### Middleware guards
 
 ```go
-// Any authenticated user
 mux.Handle("/protected", server.RequireAuth(myHandler))
-
-// Admin only
 mux.Handle("/admin", server.RequireAdmin(myHandler))
-
-// Specific scope required
 mux.Handle("/api/data", server.RequireScope("GET /api/data")(myHandler))
 ```
 
 ---
 
-## Public vs Protected Routes
-
-By default, all routes require authentication. The following paths are public (no auth required):
-
-| Path | Purpose |
-|------|---------|
-| `/` | Root/landing page |
-| `/login` | Login page |
-| `/auth/login` | Login page (alias) |
-| `/auth/magic` | Magic link validation endpoint |
-| `/auth/telegram/callback` | Telegram login callback |
-| `/auth/token` | Token auth endpoint |
-| `/auth/dev` | Dev auth endpoint |
-| `/auth/logout` | Logout endpoint |
-| `/api/health` | Health check |
-| `/api/auth` | Auth status API |
-| `/api/auth/magic-link/request` | Public magic link request (sends email, never returns URL) |
-| `/favicon.ico` | Favicon |
-| `/robots.txt` | Robots file |
-| `/public/*` | Public static assets |
-| `/core/vendor/*` | Vendor libraries |
-| `/custom/theme/*` | Theme assets |
-| `/relay/*` | VelBridge relay (has its own auth) |
-
-Everything else requires a valid session or API key.
-
----
-
-## CLI Reference
-
-### `vel auth create-key`
-
-Generate a new API key.
-
-```bash
-vel auth create-key --name "my-key" --role viewer \
-  --scope "GET /api/data" \
-  --scope "GET /api/status"
-```
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--name` | Yes | Unique key identifier |
-| `--role` | No | Role (default: "viewer") |
-| `--scope` | No | Access scopes (repeatable; default: "*") |
-
-Outputs the plaintext key. **Store it immediately — it cannot be retrieved later.**
-
-### `vel auth list-keys`
-
-List all configured API keys (tokens masked).
-
-```bash
-vel auth list-keys
-```
-
-### `vel auth revoke-key`
-
-Remove an API key.
-
-```bash
-vel auth revoke-key --id usage-share
-```
-
-### `vel auth magic-link`
-
-Generate a magic login link for a user.
-
-```bash
-vel auth magic-link --user karthi --expires 30
-```
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--user` | Yes | User ID from users.json |
-| `--expires` | No | Expiry in minutes (default: 15) |
-
-### `vel auth list-users`
-
-List all users from users.json.
-
-```bash
-vel auth list-users
-```
-
-### `vel auth add-user`
-
-Add a new user to users.json.
-
-```bash
-vel auth add-user --id vignesh --name "Vignesh" --role user --telegram 37211163
-```
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--id` | Yes | Canonical user ID |
-| `--name` | Yes | Display name |
-| `--role` | No | Role (default: "user") |
-| `--email` | No | Email address |
-| `--telegram` | No | Telegram user ID |
-
----
-
-## API Endpoints
-
-### `GET /api/auth`
-
-Returns current auth status and identity (if authenticated).
-
-### `POST /api/auth/magic-link`
-
-**Requires:** Admin role
-
-Generate a magic link and return the URL.
-
-```json
-// Request
-{"user_id": "karthi", "expires_minutes": 30}
-
-// Response
-{"url": "https://example.com/auth/magic?ml_token=vel_ml_..."}
-```
-
-### `POST /api/auth/magic-link/request`
-
-**Public** — request a magic link via email. Never returns the URL directly.
-
-```json
-// Request
-{"email": "karthi@essdee.fit"}
-
-// Response (always 200, even if email not found — prevents enumeration)
-{"message": "If an account exists with that email, a login link has been sent"}
-```
-
-### `GET /auth/magic?ml_token=vel_ml_...`
-
-**Public** — validates a magic link token, creates a session, and redirects to the dashboard.
-
-### `GET /auth/login` / `GET /login`
-
-**Public** — serves the login page with configured provider options:
-- "Login with Telegram" button (if telegram provider enabled)
-- "Login with Email" field + button (if magic link email enabled)
-
-### `POST /auth/logout`
-
-Destroys the current session and clears the cookie.
-
-### `POST /auth/telegram/callback`
-
-Handles Telegram Login Widget callback, verifies signature, creates session.
-
-### `POST /auth/token`
-
-Token-based authentication (sends `Authorization: tma <initData>`).
-
----
-
-## Login Page
-
-The framework serves a login page at `/login` (and `/auth/login`). It shows:
-
-- **Telegram login:** If the telegram provider is enabled and `BOT_TOKEN` is set, shows a "Login with Telegram" button that opens the Telegram Login Widget
-- **Email login:** If magic link email is enabled, shows an email field + "Send Login Link" button
-
-After successful authentication (via any provider), the user is redirected to the page they originally requested (stored in `?redirect=` parameter).
-
----
-
 ## Migration from Old Auth
-
-### What changed
-
-| Old (legacy) | New |
-|--------------|-----|
-| `config.json` `allowedTelegramUsers` array | `users.json` with full user records |
-| `config.json` `auth.mode` + `auth.token` | Provider-based auth (no master token) |
-| `?token=` query parameter for API access | `Authorization: Bearer vel_ak_...` header |
-| Scoped tokens in `config.json` `auth.tokens` | API keys in `users.json` `api_keys` |
-| Cookie: signed `tg_user` with user data | Cookie: `vel_session` with session ID only |
-| In-memory user state | bbolt server-side sessions |
 
 ### Automatic migration
 
 On first startup with the new auth code:
 1. If `users.json` does not exist but `config.json` has `allowedTelegramUsers`
 2. Auto-generates `users.json` with all users as admin role
-3. Prints a deprecation warning
-4. Old config fields are ignored once `users.json` exists
+3. Old config fields are ignored once `users.json` exists
 
-### Manual migration steps
+### Manual migration
 
-1. Create `users.json` with your users (see format above)
+1. Create `users.json` with your users
 2. Remove `allowedTelegramUsers`, `auth.mode`, `auth.token` from `config.json`
-3. If using scoped tokens, recreate them as API keys: `vel auth create-key`
-4. Update any remote integrations from `?token=` to `Authorization: Bearer` header
+3. Recreate scoped tokens as API keys via Admin API
+4. Update integrations from `?token=` to `Authorization: Bearer` header
 5. Restart the service
-
-### Backward compatibility
-
-The legacy `auth.Check(r)` function continues to work alongside the new system. When the new auth system is active (users.json exists), both old and new auth paths are available during the transition period.

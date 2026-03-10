@@ -2,6 +2,9 @@ package server
 
 import (
 	"compress/gzip"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -979,6 +982,211 @@ func NewServer(cfg *Config) http.Handler {
 		}
 
 		writeJSON(w, safeResponse)
+	})
+
+	// ── Admin Auth API: Users CRUD ──
+	mux.HandleFunc("/api/auth/users", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.AuthManager == nil {
+			w.WriteHeader(500)
+			writeJSON(w, map[string]interface{}{"error": "auth not configured"})
+			return
+		}
+
+		// Require admin
+		id := GetIdentity(r)
+		if id == nil || id.Role != "admin" {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+
+		switch r.Method {
+		case "GET":
+			users := cfg.AuthManager.UserStore().GetAllUsers()
+			if users == nil {
+				users = []auth.UserRecord{}
+			}
+			writeJSON(w, map[string]interface{}{"users": users})
+
+		case "POST":
+			var body struct {
+				ID         string              `json:"id"`
+				Name       string              `json:"name"`
+				Email      string              `json:"email"`
+				Role       string              `json:"role"`
+				Identities []auth.UserIdentity `json:"identities"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "invalid request body"})
+				return
+			}
+			if body.ID == "" || body.Name == "" {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "id and name are required"})
+				return
+			}
+			if body.Role == "" {
+				body.Role = "user"
+			}
+			user := auth.UserRecord{
+				ID:         body.ID,
+				Name:       body.Name,
+				Email:      body.Email,
+				Role:       body.Role,
+				Identities: body.Identities,
+			}
+			if err := cfg.AuthManager.UserStore().AddUser(user); err != nil {
+				w.WriteHeader(409)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			writeJSON(w, map[string]interface{}{"ok": true, "user": user})
+
+		case "DELETE":
+			userID := r.URL.Query().Get("id")
+			if userID == "" {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "id query parameter required"})
+				return
+			}
+			found, err := cfg.AuthManager.UserStore().RemoveUser(userID)
+			if err != nil {
+				w.WriteHeader(500)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			if !found {
+				w.WriteHeader(404)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "user not found"})
+				return
+			}
+			writeJSON(w, map[string]interface{}{"ok": true})
+
+		default:
+			http.Error(w, "Method not allowed", 405)
+		}
+	})
+
+	// ── Admin Auth API: API Keys CRUD ──
+	mux.HandleFunc("/api/auth/keys", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.AuthManager == nil {
+			w.WriteHeader(500)
+			writeJSON(w, map[string]interface{}{"error": "auth not configured"})
+			return
+		}
+
+		// Require admin
+		id := GetIdentity(r)
+		if id == nil || id.Role != "admin" {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Forbidden"})
+			return
+		}
+
+		switch r.Method {
+		case "GET":
+			keys := cfg.AuthManager.UserStore().GetAllAPIKeys()
+			// Strip key_hash from response — never expose hashes
+			type safeKey struct {
+				ID        string   `json:"id"`
+				Name      string   `json:"name"`
+				Role      string   `json:"role"`
+				Scopes    []string `json:"scopes,omitempty"`
+				CreatedBy string   `json:"created_by,omitempty"`
+				CreatedAt string   `json:"created_at,omitempty"`
+			}
+			safeKeys := make([]safeKey, 0, len(keys))
+			for _, k := range keys {
+				scopes := k.Scopes
+				if scopes == nil {
+					scopes = []string{}
+				}
+				safeKeys = append(safeKeys, safeKey{
+					ID:        k.ID,
+					Name:      k.Name,
+					Role:      k.Role,
+					Scopes:    scopes,
+					CreatedBy: k.CreatedBy,
+					CreatedAt: k.CreatedAt,
+				})
+			}
+			writeJSON(w, map[string]interface{}{"keys": safeKeys})
+
+		case "POST":
+			var body struct {
+				Name   string   `json:"name"`
+				Role   string   `json:"role"`
+				Scopes []string `json:"scopes"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "invalid request body"})
+				return
+			}
+			if body.Name == "" {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "name is required"})
+				return
+			}
+			if body.Role == "" {
+				body.Role = "viewer"
+			}
+
+			// Generate API key
+			keyBytes := make([]byte, 32)
+			if _, err := rand.Read(keyBytes); err != nil {
+				w.WriteHeader(500)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "key generation failed"})
+				return
+			}
+			plainKey := "vel_ak_live_" + hex.EncodeToString(keyBytes)
+
+			// Hash
+			keyHash := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte(plainKey)))
+
+			apiKey := auth.APIKey{
+				ID:        body.Name,
+				Name:      body.Name,
+				KeyHash:   keyHash,
+				Role:      body.Role,
+				Scopes:    body.Scopes,
+				CreatedBy: id.UserID,
+				CreatedAt: time.Now().UTC().Format(time.RFC3339),
+			}
+
+			if err := cfg.AuthManager.UserStore().AddAPIKey(apiKey); err != nil {
+				w.WriteHeader(409)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+
+			// Return plaintext key ONCE
+			writeJSON(w, map[string]interface{}{"ok": true, "key": plainKey, "id": body.Name})
+
+		case "DELETE":
+			keyID := r.URL.Query().Get("id")
+			if keyID == "" {
+				w.WriteHeader(400)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "id query parameter required"})
+				return
+			}
+			found, err := cfg.AuthManager.UserStore().RemoveAPIKey(keyID)
+			if err != nil {
+				w.WriteHeader(500)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+				return
+			}
+			if !found {
+				w.WriteHeader(404)
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "API key not found"})
+				return
+			}
+			writeJSON(w, map[string]interface{}{"ok": true})
+
+		default:
+			http.Error(w, "Method not allowed", 405)
+		}
 	})
 
 	mux.HandleFunc("/auth/logout", func(w http.ResponseWriter, r *http.Request) {

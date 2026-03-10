@@ -1,0 +1,18 @@
+{
+  "id": "auth-settings",
+  "contractVersion": "1.0",
+  "name": "Auth Settings",
+  "description": "Manage users, API keys, and magic links",
+  "version": "1.0.0",
+  "author": "core",
+  "icon": "🔐",
+  "position": 99,
+  "size": "full",
+  "refreshMs": 0,
+  "admin_only": true,
+  "requires": [],
+  "capabilities": ["fetch"],
+  "dataSchema": {
+    "type": "object"
+  }
+}

@@ -241,6 +241,47 @@ func (us *UserStore) AddUser(user UserRecord) error {
 	return SaveUsers(us.path, us.data)
 }
 
+// RemoveUser removes a user by ID and persists to disk.
+// Returns true if the user was found and removed.
+func (us *UserStore) RemoveUser(id string) (bool, error) {
+	us.mu.Lock()
+	defer us.mu.Unlock()
+	if us.data == nil {
+		return false, fmt.Errorf("user store not loaded")
+	}
+	for i, u := range us.data.Users {
+		if u.ID == id {
+			us.data.Users = append(us.data.Users[:i], us.data.Users[i+1:]...)
+			return true, SaveUsers(us.path, us.data)
+		}
+	}
+	return false, nil
+}
+
+// GetAllUsers returns a copy of all user records.
+func (us *UserStore) GetAllUsers() []UserRecord {
+	us.mu.RLock()
+	defer us.mu.RUnlock()
+	if us.data == nil {
+		return nil
+	}
+	result := make([]UserRecord, len(us.data.Users))
+	copy(result, us.data.Users)
+	return result
+}
+
+// GetAllAPIKeys returns a copy of all API key records.
+func (us *UserStore) GetAllAPIKeys() []APIKey {
+	us.mu.RLock()
+	defer us.mu.RUnlock()
+	if us.data == nil {
+		return nil
+	}
+	result := make([]APIKey, len(us.data.APIKeys))
+	copy(result, us.data.APIKeys)
+	return result
+}
+
 // LoadUsers reads and parses a users.json file. Does not start a watcher.
 func LoadUsers(path string) (*UsersFile, error) {
 	data, err := os.ReadFile(path)
