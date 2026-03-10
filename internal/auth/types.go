@@ -21,12 +21,12 @@ type Credentials interface{}
 
 // Identity is the normalized result of successful authentication.
 type Identity struct {
-	UserID   string            // canonical user ID from users.json (e.g. "karthi")
-	Name     string            // display name
-	Provider string            // which provider authenticated them ("telegram", "magic_link", "api_key")
-	Role     string            // "admin", "user", "viewer"
-	Scopes   []string          // what they can access (for API keys; nil means full access for role)
-	Meta     map[string]string // provider-specific extra data
+	UserID   string            `json:"user_id"`   // canonical user ID from users.json (e.g. "karthi")
+	Name     string            `json:"name"`       // display name
+	Provider string            `json:"provider"`   // which provider authenticated them ("telegram", "magic_link", "api_key")
+	Role     string            `json:"role"`       // "admin", "user", "viewer"
+	Scopes   []string          `json:"scopes,omitempty"` // what they can access (for API keys; nil means full access for role)
+	Meta     map[string]string `json:"meta,omitempty"`   // provider-specific extra data
 }
 
 // Session represents a server-side session stored in bbolt.

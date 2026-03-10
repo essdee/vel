@@ -24,6 +24,9 @@ import (
 	vel "vel/pkg/vel"
 )
 
+// Ensure auth import is used (legacy functions still referenced in some paths).
+var _ = auth.IsTestMode
+
 type Config struct {
 	RootDir      string
 	Workspace    string
@@ -37,6 +40,7 @@ type Config struct {
 	Apps         []*apps.App
 	Hooks        *hooks.Engine
 	DSManager    *datasource.Manager
+	AuthManager  *auth.AuthManager // new auth system (nil = legacy mode)
 }
 
 type rateLimiter struct {
@@ -376,22 +380,58 @@ func NewServer(cfg *Config) http.Handler {
 
 	mux.HandleFunc("/api/auth", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "POST" {
+			// Telegram initData authentication
 			var body struct {
 				InitData string `json:"initData"`
 			}
 			json.NewDecoder(r.Body).Decode(&body)
 			if body.InitData == "" {
 				w.WriteHeader(401)
-				writeJSON(w, map[string]interface{}{"ok": false})
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "initData required"})
 				return
 			}
+
+			// Use the Telegram provider to authenticate
+			if cfg.AuthManager != nil {
+				tgProvider := cfg.AuthManager.GetProvider("telegram")
+				if tgProvider == nil {
+					w.WriteHeader(500)
+					writeJSON(w, map[string]interface{}{"ok": false, "error": "telegram provider not configured"})
+					return
+				}
+				creds := auth.TelegramCredentials{InitData: body.InitData}
+				identity, err := tgProvider.Authenticate(creds)
+				if err != nil {
+					w.WriteHeader(401)
+					writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+					return
+				}
+				// Create session
+				sess, err := cfg.AuthManager.CreateSession(identity)
+				if err != nil {
+					w.WriteHeader(500)
+					writeJSON(w, map[string]interface{}{"ok": false, "error": "session creation failed"})
+					return
+				}
+				setSessionCookie(w, cfg.AuthManager, sess.ID)
+				writeJSON(w, map[string]interface{}{
+					"ok": true,
+					"user": map[string]interface{}{
+						"id":   identity.UserID,
+						"name": identity.Name,
+						"role": identity.Role,
+					},
+				})
+				return
+			}
+
+			// Legacy fallback
 			user := auth.ValidateInitData(body.InitData)
 			if user == nil || !auth.IsAllowed(user.ID) {
 				w.WriteHeader(401)
 				writeJSON(w, map[string]interface{}{"ok": false})
 				return
 			}
-			// Set cookie so subsequent requests are authenticated
 			userInfo, _ := json.Marshal(map[string]interface{}{
 				"id":         user.ID,
 				"first_name": user.FirstName,
@@ -411,17 +451,34 @@ func NewServer(cfg *Config) http.Handler {
 			return
 		}
 
-		// GET — also return authMode
-		resp := map[string]interface{}{"authMode": auth.GetAuthMode()}
-		user := auth.Check(r)
-		if user == nil {
-			w.WriteHeader(401)
-			resp["ok"] = false
-			writeJSON(w, resp)
-			return
+		// GET — check auth status
+		resp := map[string]interface{}{}
+		if cfg.AuthManager != nil {
+			identity := GetIdentity(r)
+			if identity == nil {
+				w.WriteHeader(401)
+				resp["ok"] = false
+				writeJSON(w, resp)
+				return
+			}
+			resp["ok"] = true
+			resp["user"] = map[string]interface{}{
+				"id":   identity.UserID,
+				"name": identity.Name,
+				"role": identity.Role,
+			}
+		} else {
+			resp["authMode"] = auth.GetAuthMode()
+			user := auth.Check(r)
+			if user == nil {
+				w.WriteHeader(401)
+				resp["ok"] = false
+				writeJSON(w, resp)
+				return
+			}
+			resp["ok"] = true
+			resp["user"] = user
 		}
-		resp["ok"] = true
-		resp["user"] = user
 		writeJSON(w, resp)
 	})
 
@@ -950,6 +1007,26 @@ func NewServer(cfg *Config) http.Handler {
 
 	// Wrap with middleware: recovery (outermost) → security/gzip → mux.
 	return recoveryMiddleware(applyMiddleware(mux), cfg)
+}
+
+// checkAuth checks authentication using the new AuthManager if available,
+// falling back to legacy auth.Check. Returns true if authenticated.
+// For the new system, it checks the request context (set by middleware).
+func checkAuth(r *http.Request, cfg *Config) bool {
+	if cfg.AuthManager != nil {
+		return GetIdentity(r) != nil
+	}
+	return auth.Check(r) != nil
+}
+
+// checkAuthNotScoped checks that the user is authenticated and NOT a scoped/api-key user.
+func checkAuthNotScoped(r *http.Request, cfg *Config) bool {
+	if cfg.AuthManager != nil {
+		id := GetIdentity(r)
+		return id != nil && id.Provider != "api_key"
+	}
+	user := auth.Check(r)
+	return user != nil && !auth.IsScopedUser(user)
 }
 
 func servesPanelData(w http.ResponseWriter, r *http.Request, panelID string, cfg *Config) {
