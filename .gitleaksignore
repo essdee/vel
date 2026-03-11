@@ -1,0 +1,16 @@
+# False positives — documented examples and public IDs
+#
+# docs/AUTH.md & AGENTS.md: vel_ak_live_abc123... placeholder API keys in documentation examples
+AGENTS.md:curl-auth-header:254
+docs/AUTH.md:curl-auth-header:201
+6597f85e892288152490b047f5efa33a317f3326:docs/AUTH.md:curl-auth-header:201
+125a7f42046bb194078c5b661b1eb6bf1ef5d788:AGENTS.md:curl-auth-header:254
+125a7f42046bb194078c5b661b1eb6bf1ef5d788:docs/AUTH.md:curl-auth-header:197
+
+# claude-usage-poll.sh: Anthropic's public OAuth client ID (OAUTH_CLIENT_ID) — not a secret
+sdk/openclaw/claude-usage-poll.sh:generic-api-key:19
+apps/velboard/panels/claude-usage/scripts/claude-usage-poll.sh:generic-api-key:19
+fcd5a4cdb3891d78b9812f2a2647008d3da0a85c:sdk/openclaw/claude-usage-poll.sh:generic-api-key:19
+
+# config.json: instance-specific, gitignored — only hits on no-git scans
+config.json:generic-api-key:14
