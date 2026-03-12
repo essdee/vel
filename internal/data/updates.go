@@ -90,17 +90,27 @@ func CheckUpdates(prodDir string) *UpdatesStatus {
 
 	result.Framework = checkRepo(prodDir, "vel")
 
-	appsDir := filepath.Join(prodDir, "apps")
-	entries, err := os.ReadDir(appsDir)
-	if err == nil {
+	// Check apps from both apps/ subdirectory and VEL_APPS
+	appsDirs := []string{filepath.Join(prodDir, "apps")}
+	if externalDir := os.Getenv("VEL_APPS"); externalDir != "" {
+		appsDirs = append(appsDirs, externalDir)
+	}
+
+	seen := make(map[string]bool)
+	for _, appsDir := range appsDirs {
+		entries, err := os.ReadDir(appsDir)
+		if err != nil {
+			continue
+		}
 		for _, entry := range entries {
-			if !entry.IsDir() {
+			if !entry.IsDir() || seen[entry.Name()] {
 				continue
 			}
 			appDir := filepath.Join(appsDir, entry.Name())
 			if _, err := os.Stat(filepath.Join(appDir, ".git")); err != nil {
 				continue // not a git repo, skip
 			}
+			seen[entry.Name()] = true
 			result.Apps = append(result.Apps, checkRepo(appDir, entry.Name()))
 		}
 	}
