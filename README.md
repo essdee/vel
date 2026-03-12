@@ -5,121 +5,147 @@
 <h1 align="center">⚡ Vel</h1>
 
 <p align="center">
-  <strong>The framework where AI builds and the framework guarantees.</strong>
+  <strong>Apps your AI agent builds. Guaranteed by the framework.</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.1.0-c9a84c?style=flat-square" alt="Version">
-  <img src="https://img.shields.io/badge/Go-1.22+-00ADD8?style=flat-square" alt="Go">
+  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat-square" alt="Go">
   <img src="https://img.shields.io/badge/tests-89-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
 </p>
 
----
-
-## Stop waiting for PRs
-
-Every framework works the same way. You need a feature. You open an issue. Maybe someone builds it. Maybe they don't. You fork and maintain your own copy forever.
-
-Vel is different. Tell your AI agent what you need. It builds it. The framework makes sure it can't break anything else.
-
-**Your agent writes the app. Vel guarantees it works.**
-
-That's not a tagline — it's the architecture. Manifest-driven apps, sandboxed capabilities, compile-time enforcement. The framework doesn't suggest how things should work. It enforces correctness structurally. AI writes two files, and it works. Every time.
+<p align="center">
+  <em>The first framework where the primary developer is not human.</em>
+</p>
 
 ---
 
-## What Vel gives you
+## The Problem
 
-- **Single Go binary** — framework + all app code compiled into one binary. No runtime dependencies. No Node.js. No Python.
-- **App system** — apps are folders with a manifest. They ship panels, routes, data sources, Go server code. Drop an app in, rebuild, done.
-- **Panel system** — real-time UI components. `manifest.json` + `ui.js` = a live panel with WebSocket streaming, layout, and error handling built in.
-- **Capability system** — apps declare what they're allowed to import. `vel build` enforces it at compile time. Your agent can't accidentally import `os/exec`.
-- **Hook engine** — filters and actions, Go-native. Apps modify behaviour without touching framework code.
-- **Telegram auth** — HMAC-SHA256, signed cookies, rate limiting. One config, done.
+Your AI agent can write code. But where does that code run? How do you know it won't break your server? How do you install someone else's agent-built tool without worrying?
+
+Everyone's making agents smarter at writing code. Nobody's making a framework where that code is **guaranteed safe**.
+
+## The Solution
+
+Tell your AI agent what you need. It writes two files. Vel compiles, sandboxes, validates, and serves.
+
+**If it builds, it works. If it doesn't build, the error tells you exactly what's wrong.**
+
+```
+Agent writes:  app.json + ui.js
+Vel does:      discover → validate → compile → sandbox → serve
+You get:       a live dashboard panel with real-time data
+```
 
 ---
 
-## Why AI-native?
+## Why Vel?
 
-AI agents write code that's 1.7× buggier than human code — especially around security, concurrency, and logic. The fix isn't better prompts. It's a framework where the insecure path doesn't exist, the wrong structure is rejected at build time, and the agent only writes the parts that matter.
+### 🤖 Agent-First
+Built for AI developers from day one. JSON manifests (agents corrupt JSON less than code). 5-function public API (less to hallucinate). Elm-quality error messages. This entire framework was built through a Telegram chat — no human wrote a line of code.
 
-Vel enforces this through compile-time capability checks, manifest-driven validation, a five-function public API (less to hallucinate), and JSON-first declarations (agents corrupt JSON less than code). Every default is the safe default. Every error tells you how to fix it.
+### 🛡️ Structurally Safe
+The wrong code won't compile. Apps declare what they import, `vel build` enforces it at compile time. `os/exec` is blocked by default. In a world where [373 OpenClaw skills were flagged as malicious](https://github.com/VoltAgent/awesome-openclaw-skills), Vel makes the unsafe path impossible.
 
-📖 **[AI-Native Design Principles →](./AI-NATIVE.md)**
+### 🧩 Composable
+Install anything. Remove anything. Nothing else breaks. Every app is independent. No dependency hell. No version conflicts. Add one, remove one — everything else keeps working.
+
+### ⚡ Zero-Config Deploy
+One Go binary. No Node.js. No Python. No Docker. No runtime dependencies. `vel build` → deploy anywhere.
 
 ---
 
 ## Apps built on Vel
 
-| App | What it does |
-|-----|-------------|
-| [Velboard](https://github.com/karthikeyan5/velboard) | The dashboard that builds itself. 9 live monitoring panels — and your agent builds the next ones. |
-| [VelBridge](https://github.com/karthikeyan5/velbridge) | Your agent can use your browser. Pair with a code, watch it work. No passwords shared. |
+| App | What it does | Install |
+|-----|-------------|---------|
+| [VelMetrics](https://github.com/karthikeyan5/velmetrics) | Server monitoring — CPU, memory, disk, processes | `git clone` into apps/ |
+| [VelClawBoard](https://github.com/karthikeyan5/velclawboard) | OpenClaw command center — usage, sessions, models | `git clone` into apps/ |
+| [VelBridge](https://github.com/karthikeyan5/velbridge) | Your agent controls your browser. Pair with a code, watch it work. | `git clone` into apps/ |
 
 These apps don't fork Vel. They don't conflict with each other. They compose. That's the point.
-
----
-
-## How apps work
-
-An app is a folder in `apps/` with an `app.json`:
-
-```
-apps/my-app/
-├── app.json           # Manifest — name, capabilities, routes
-├── panels/            # Panel folders (manifest.json + ui.js each)
-└── server/            # Optional Go code (compiled into binary)
-```
-
-Apps can be panel-only (zero Go code) or ship full server-side logic. Either way, the framework handles discovery, routing, auth, streaming, and error boundaries.
-
-Apps compose. They don't conflict. Add one, remove one — nothing else changes.
-
----
-
-## The roadmap
-
-Vel v0.1 is the foundation — apps, panels, auth, real-time streaming, capability-enforced builds. Everything structural is being frozen in v0.1 before feature work begins.
-
-| Version | Theme | What it unlocks |
-|---------|-------|-----------------|
-| **v0.1** ✅ | The Foundation | Apps, panels, WebSocket, auth, `vel build`, capability system |
-| **v0.2** | The Model | JSON schema → SQLite tables, auto CRUD APIs, migrations |
-| **v0.3** | The Desk | Auto-generated List/Form views from models, zero frontend code |
-| **v0.4** | The Guardian | Users, roles, row-level permissions |
-| **v0.5** | The Automator | Background jobs, scheduler, workflow engine |
-| **v0.6** | The Communicator | Email, PDF generation, webhooks |
-| **v0.7** | The Portal | Website routing, blog, full-text search, i18n |
-| **v0.8** | The Enterprise | Multi-tenancy, reports, dashboards, OAuth, S3 |
-| **v0.9** | The Ecosystem | App lifecycle, patches, fixtures, testing framework |
-| **v1.0** | The Rock | Security audit, load testing, documentation. No new features. |
-
-By v0.9, you can build anything — accounting, inventory, CRM, HR, manufacturing, e-commerce. As apps that compose on Vel.
-
-📋 **[Full roadmap →](https://github.com/essdee/vel-project-notes/blob/main/ROADMAP.md)**
 
 ---
 
 ## Quick start
 
 ```bash
+# Clone
 git clone https://github.com/essdee/vel.git
 cd vel
-go build -o vel .
+
+# Configure
 cp config.example.json config.json
-BOT_TOKEN=your-telegram-token ./vel
+# Edit config.json with your bot token and user IDs
+
+# Build and run
+go run . build
+BOT_TOKEN=your-token ./vel
 ```
 
-Open `localhost:3700`.
+Open `localhost:3700`. That's it.
 
 ### Add an app
 
 ```bash
 cd apps/
-git clone https://github.com/karthikeyan5/velboard.git
+git clone https://github.com/karthikeyan5/velmetrics.git
 cd .. && ./vel build && ./vel
 ```
+
+Reload the page. Six new monitoring panels appear. No config. No restart. Just rebuild and serve.
+
+---
+
+## How apps work
+
+An app is a folder with an `app.json`:
+
+```
+apps/my-app/
+├── app.json           # Manifest — name, capabilities, routes
+├── panels/            # UI panels (manifest.json + ui.js each)
+└── server/            # Optional Go code (compiled into binary)
+```
+
+Apps can be **panel-only** (zero Go code, just UI) or ship **full server-side logic**. Either way: discovery, routing, auth, streaming, and error boundaries are handled.
+
+### The capability system
+
+Apps declare what standard library packages they need:
+
+```json
+{
+  "capabilities": {
+    "read": {},
+    "write": {},
+    "net": {}
+  }
+}
+```
+
+`vel build` scans the app's Go code and blocks any import not covered by declared capabilities. Your agent can't accidentally (or intentionally) import `os/exec`, `syscall`, or `unsafe`.
+
+---
+
+## The roadmap
+
+v0.1 is the foundation. Everything structural is frozen. Feature work builds on stable contracts.
+
+| Version | Theme | What it unlocks |
+|---------|-------|-----------------|
+| **v0.1** ✅ | The Foundation | Apps, panels, auth, WebSocket, `vel build`, capability sandbox |
+| **v0.2** | The Model | JSON schema → SQLite tables, auto CRUD APIs |
+| **v0.3** | The Ecosystem | App lifecycle, dependencies, patches, `vel new-app` |
+| **v0.4** | The Guardian | Users, roles, row-level permissions |
+| **v0.5** | The Desk | Auto-generated List/Form views from models |
+| **v0.6** → **v1.0** | Scale | Jobs, email, portals, reports, enterprise features |
+
+By v0.9, you can build anything — accounting, inventory, CRM, HR — as composable Vel apps.
+
+📋 **[Full roadmap →](https://github.com/essdee/vel-project-notes/blob/main/ROADMAP.md)**
 
 ---
 
@@ -127,43 +153,26 @@ cd .. && ./vel build && ./vel
 
 **5,756 lines of Go. 89 tests. 10 packages.**
 
-### Core
-| Package | What it does |
-|---------|-------------|
-| `internal/apps` | App discovery — scans `apps/`, parses `app.json`, loads panels/routes/data sources |
-| `internal/auth` | Telegram HMAC-SHA256 + signed cookies + rate limiting + user whitelist |
-| `internal/build` | `vel build` — capability scanning, AST rewriting, app compilation into single binary |
-| `internal/cap` | Capability definitions — tier 1 (safe), tier 2 (declared), blacklisted |
-| `internal/data` | System data handlers — CPU, memory, disk, uptime, processes, crons, models, agent status |
-| `internal/datasource` | File-based data sources with configurable polling intervals |
-| `internal/hooks` | Filter + action engine (Go-native) |
-| `internal/panels` | Panel discovery + registry across core/custom/app directories |
-| `internal/schema` | Manifest validation with Elm-quality error messages |
-| `internal/server` | HTTP server + WebSocket streaming + middleware + static files |
+- **App discovery** — drop a folder in apps/, rebuild, done
+- **Panel system** — real-time WebSocket streaming, auto-layout, error boundaries
+- **Capability sandbox** — compile-time import enforcement (Deno-inspired)
+- **Auth** — Telegram HMAC-SHA256, API keys, magic links, signed cookies
+- **Build system** — AST rewriting, capability wrappers, single binary output
+- **Debug server** — localhost:6060 for diagnostics
+- **Health checks** — `vel verify` + `/api/health`
+- **Frontend** — Preact + HTM (5KB vendored), service worker, responsive layout
 
-### Public API (`pkg/vel/`)
-| Function | Purpose |
-|----------|---------|
-| `RegisterApp(reg)` | Apps register routes from `init()` |
-| `Check(r)` | Returns authenticated user from request |
-| `IsAllowed(id)` | Check user against whitelist |
-| `CheckBotToken(token)` | Validate bot token |
-| `GetBotToken()` | Get configured bot token |
+---
 
-### CLI
-| Command | What it does |
-|---------|-------------|
-| `vel start` | Start the server (default command) |
-| `vel build` | Compile framework + app code into single binary |
-| `vel caps list [app]` | List capabilities for all or one app |
-| `vel caps export [app]` | Export capability report |
-| `vel version` | Print version |
+## For AI agents
 
-### Frontend
-- **Preact + HTM** — vendored (5KB), zero build step, native ES modules
-- **Responsive layout** — panels auto-arrange by size (half/full)
-- **Error boundaries** — panels fail independently
-- **Service worker** — offline-capable static assets
+Vel ships with comprehensive agent instructions:
+
+- **[AGENT-SETUP.md](./AGENT-SETUP.md)** — Step-by-step install guide your agent can follow
+- **[AGENT-EXTEND.md](./AGENT-EXTEND.md)** — How to build apps on Vel
+- **[AI-NATIVE.md](./AI-NATIVE.md)** — Why Vel is designed this way
+
+Every error message tells your agent **how to fix it**, not just what broke. Convention over configuration means fewer decisions, fewer mistakes, fewer tokens wasted.
 
 ---
 
@@ -171,11 +180,11 @@ cd .. && ./vel build && ./vel
 
 | Doc | What it covers |
 |-----|---------------|
-| [AI-NATIVE.md](./AI-NATIVE.md) | Why Vel is designed for AI agents, and what that means |
-| [CONTRACTS.md](./CONTRACTS.md) | Panel contract, manifest schema, hooks, CSS |
-| [CONVENTIONS.md](./CONVENTIONS.md) | Decision framework |
-| [TESTING.md](./TESTING.md) | Testing strategy |
-| [AGENT-EXTEND.md](./AGENT-EXTEND.md) | AI agent playbook for building Vel apps |
+| [AI-NATIVE.md](./AI-NATIVE.md) | Design principles for AI-native development |
+| [CONTRACTS.md](./CONTRACTS.md) | Panel contracts, manifest schema, hooks, CSS |
+| [CONVENTIONS.md](./CONVENTIONS.md) | Decision framework and naming |
+| [TESTING.md](./TESTING.md) | Testing strategy and conventions |
+| [AGENT-EXTEND.md](./AGENT-EXTEND.md) | Build your first Vel app |
 
 ---
 
