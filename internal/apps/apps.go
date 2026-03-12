@@ -3,6 +3,7 @@ package apps
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,7 +17,9 @@ type App struct {
 	Description  string            `json:"description"`
 	Author       string            `json:"author"`
 	License      string            `json:"license"`
-	Vel          string            `json:"vel"`
+	Vel                  string            `json:"vel"`
+	Dependencies         map[string]string `json:"dependencies"`
+	OptionalDependencies map[string]string `json:"optionalDependencies"`
 	Panels       string            `json:"panels"`
 	Routes       map[string]Route  `json:"routes"`
 	Theme        string            `json:"theme"`
@@ -99,7 +102,38 @@ func Discover(rootDir string) ([]*App, []AppError) {
 		apps = append(apps, app)
 	}
 
+	// Validate dependencies
+	depErrors := validateDependencies(apps, appsByName)
+	allErrors = append(allErrors, depErrors...)
+
 	return apps, allErrors
+}
+
+// validateDependencies checks that all app dependencies are satisfied.
+func validateDependencies(apps []*App, byName map[string]*App) []AppError {
+	var errors []AppError
+
+	for _, app := range apps {
+		// Check hard dependencies
+		for depName := range app.Dependencies {
+			if _, ok := byName[depName]; !ok {
+				errors = append(errors, AppError{
+					AppDir:  app.Name,
+					Message: fmt.Sprintf("App %q requires %q but it is not installed", app.Name, depName),
+					Hint:    fmt.Sprintf("Install %s or remove it from dependencies in app.json", depName),
+				})
+			}
+		}
+
+		// Check optional dependencies (warn only, not error)
+		for depName := range app.OptionalDependencies {
+			if _, ok := byName[depName]; !ok {
+				log.Printf("[apps] ⚠ App %q optionally uses %q (not installed) — some features may be limited", app.Name, depName)
+			}
+		}
+	}
+
+	return errors
 }
 
 // discoverFromDir loads all valid apps from a single directory.

@@ -8,7 +8,7 @@ users.json
 verify-log.json
 
 # Apps (standalone repos, cloned at install)
-apps/
+/apps/
 
 # Build artifacts
 _build/
