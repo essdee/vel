@@ -69,11 +69,44 @@ func (e AppError) String() string {
 var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 var semverRe = regexp.MustCompile(`^\d+\.\d+\.\d+`)
 
+// Discover finds all apps from:
+//  1. The `apps/` subdirectory of rootDir (backward compat)
+//  2. The directory specified by the VEL_APPS environment variable (external apps)
+//
+// External apps take precedence over internal ones when names conflict.
 func Discover(rootDir string) ([]*App, []AppError) {
+	var allErrors []AppError
+	appsByName := make(map[string]*App)
+
+	// Load from apps/ subdirectory (backward compat)
+	internalApps, internalErrors := discoverFromDir(filepath.Join(rootDir, "apps"))
+	allErrors = append(allErrors, internalErrors...)
+	for _, app := range internalApps {
+		appsByName[app.Name] = app
+	}
+
+	// Load from VEL_APPS env var (external apps, takes precedence over internal)
+	if externalDir := os.Getenv("VEL_APPS"); externalDir != "" {
+		externalApps, externalErrors := discoverFromDir(externalDir)
+		allErrors = append(allErrors, externalErrors...)
+		for _, app := range externalApps {
+			appsByName[app.Name] = app
+		}
+	}
+
+	var apps []*App
+	for _, app := range appsByName {
+		apps = append(apps, app)
+	}
+
+	return apps, allErrors
+}
+
+// discoverFromDir loads all valid apps from a single directory.
+func discoverFromDir(appsDir string) ([]*App, []AppError) {
 	var apps []*App
 	var errors []AppError
 
-	appsDir := filepath.Join(rootDir, "apps")
 	entries, err := os.ReadDir(appsDir)
 	if err != nil {
 		return nil, nil

@@ -236,14 +236,49 @@ func Run(opts Options) error {
 	return nil
 }
 
+// discoverApps finds all apps with Go code from:
+//  1. The `apps/` subdirectory of rootDir (backward compat)
+//  2. The directory specified by the VEL_APPS environment variable (external apps)
+//
+// External apps take precedence over internal ones when names conflict.
 func discoverApps(rootDir string) ([]AppBuildInfo, error) {
-	appsDir := filepath.Join(rootDir, "apps")
+	appsByName := make(map[string]AppBuildInfo)
+
+	// Load from apps/ subdirectory (backward compat)
+	internalApps, err := discoverAppsFromDir(filepath.Join(rootDir, "apps"))
+	if err != nil {
+		return nil, err
+	}
+	for _, app := range internalApps {
+		appsByName[app.Name] = app
+	}
+
+	// Load from VEL_APPS env var (external apps, takes precedence over internal)
+	if externalDir := os.Getenv("VEL_APPS"); externalDir != "" {
+		externalApps, err := discoverAppsFromDir(externalDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, app := range externalApps {
+			appsByName[app.Name] = app
+		}
+	}
+
+	var apps []AppBuildInfo
+	for _, app := range appsByName {
+		apps = append(apps, app)
+	}
+	return apps, nil
+}
+
+// discoverAppsFromDir loads all apps with Go code from a single directory.
+func discoverAppsFromDir(appsDir string) ([]AppBuildInfo, error) {
 	appEntries, err := os.ReadDir(appsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("reading apps/: %w", err)
+		return nil, fmt.Errorf("reading %s: %w", appsDir, err)
 	}
 
 	var apps []AppBuildInfo
@@ -286,11 +321,11 @@ func discoverApps(rootDir string) ([]AppBuildInfo, error) {
 		}
 
 		apps = append(apps, AppBuildInfo{
-			Name:       manifest.Name,
-			Dir:        appDir,
-			GoFiles:    goFiles,
-			Manifest:   &manifest,
-			HasServer:  len(serverGoFiles) > 0,
+			Name:      manifest.Name,
+			Dir:       appDir,
+			GoFiles:   goFiles,
+			Manifest:  &manifest,
+			HasServer: len(serverGoFiles) > 0,
 		})
 	}
 	return apps, nil

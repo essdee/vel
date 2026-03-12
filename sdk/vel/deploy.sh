@@ -18,11 +18,13 @@ if [ -f "$VEL_DIR/.env" ]; then
         case "$key" in
             OPENCLAW_GATEWAY_TOKEN) OPENCLAW_GATEWAY_TOKEN="${value}" ;;
             OPENCLAW_GATEWAY_PORT) OPENCLAW_GATEWAY_PORT="${value}" ;;
+            VEL_APPS) VEL_APPS="${value}" ;;
         esac
     done < "$VEL_DIR/.env"
 fi
 OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}"
 OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
+VEL_APPS="${VEL_APPS:-}"
 
 # Auto-detect systemd service name by finding which service runs from this dir
 SERVICE_NAME=""
@@ -57,14 +59,28 @@ cd "$VEL_DIR"
 git pull --ff-only 2>/dev/null || echo "  (pull failed — skipping)"
 
 # Step 2: Pull each app
-for app_dir in "$VEL_DIR"/apps/*/; do
-    app_name=$(basename "$app_dir")
-    if [ -d "$app_dir/.git" ]; then
-        echo "📥 Pulling $app_name..."
-        cd "$app_dir"
-        git pull --ff-only 2>/dev/null || echo "  (pull failed for $app_name — continuing)"
-    fi
-done
+# Helper: pull git-tracked apps from a given directory
+pull_apps_from_dir() {
+    local dir="$1"
+    [ -d "$dir" ] || return 0
+    for app_dir in "$dir"/*/; do
+        [ -d "$app_dir" ] || continue
+        app_name=$(basename "$app_dir")
+        if [ -d "$app_dir/.git" ]; then
+            echo "📥 Pulling $app_name..."
+            cd "$app_dir"
+            git pull --ff-only 2>/dev/null || echo "  (pull failed for $app_name — continuing)"
+        fi
+    done
+}
+
+# Pull from built-in apps/ directory (backward compat)
+pull_apps_from_dir "$VEL_DIR/apps"
+
+# Pull from external VEL_APPS directory (if configured)
+if [ -n "$VEL_APPS" ]; then
+    pull_apps_from_dir "$VEL_APPS"
+fi
 
 # Step 3: Build
 echo ""
