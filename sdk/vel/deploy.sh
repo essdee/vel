@@ -6,7 +6,8 @@
 
 set -e
 
-VEL_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Resolve to Vel root: script is at sdk/vel/deploy.sh, so root is 2 levels up
+VEL_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 
 # Auto-detect Go
 GO="$(which go 2>/dev/null || echo /usr/local/go/bin/go)"
