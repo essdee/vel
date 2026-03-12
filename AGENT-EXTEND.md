@@ -155,11 +155,12 @@ Config-driven static file serving:
 ## 5. Install an App
 
 ```bash
-cd apps/
+# Apps can be in apps/ or the VEL_APPS directory
+cd apps/  # or: cd $VEL_APPS
 git clone https://github.com/someone/vel-app-docker docker
 ```
 
-App panels discovered from `apps/*/panels/*/manifest.json`.
+App panels discovered from both `apps/*/panels/*/manifest.json` and `$VEL_APPS/*/panels/*/manifest.json`.
 
 **If the app has Go server code** (a `server/` directory), you must run `vel build` to compile it into the binary:
 
