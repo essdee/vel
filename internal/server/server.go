@@ -155,6 +155,7 @@ type ServerResult struct {
 
 func NewServer(cfg *Config) ServerResult {
 	// Initialize error logger before serving any requests.
+	vel.SetRoot(cfg.RootDir)
 	vel.InitErrorLog(filepath.Join(cfg.RootDir, "logs"))
 
 	mux := http.NewServeMux()
@@ -590,16 +591,9 @@ func NewServer(cfg *Config) ServerResult {
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
 		}
-		scriptPath := filepath.Join(cfg.RootDir, "sdk", "openclaw", "claude-usage-poll.sh")
-		// Fallback to legacy location
-		if _, err := os.Stat(scriptPath); err != nil {
-			scriptPath = filepath.Join(cfg.Workspace, "skills", "claude-usage-monitor", "scripts", "claude-usage-poll.sh")
-		}
-		cmd := exec.Command("bash", scriptPath)
-		cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"))
-		if err := cmd.Run(); err != nil {
+		if err := vel.RefreshUsage(); err != nil {
 			w.WriteHeader(500)
-			writeJSON(w, map[string]interface{}{"error": "Refresh failed"})
+			writeJSON(w, map[string]interface{}{"error": "Refresh failed: " + err.Error()})
 			return
 		}
 		usage := data.GetUsageData(cfg.Workspace)

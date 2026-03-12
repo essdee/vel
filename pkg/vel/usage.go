@@ -5,25 +5,32 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 )
 
-// RefreshUsage runs the claude-usage-poll.sh script synchronously.
-// This is a framework-level function that apps can call since they
-// don't have direct os/exec access in the sandboxed build.
+// velRoot is set by the server at startup via SetRoot().
+var velRoot string
+var velRootOnce sync.Once
+
+// SetRoot stores the Vel root directory for framework functions.
+// Called once by the server at startup.
+func SetRoot(root string) {
+	velRootOnce.Do(func() { velRoot = root })
+}
+
+// RefreshUsage runs sdk/openclaw/claude-usage-poll.sh synchronously.
+// The canonical location is sdk/openclaw/ inside the Vel root.
+// Apps can call this since they don't have os/exec access in the sandboxed build.
 func RefreshUsage() error {
 	home, _ := os.UserHomeDir()
 
-	// Try known script locations
-	candidates := []string{
-		filepath.Join(home, ".openclaw/workspace/skills/claude-usage-monitor/scripts/claude-usage-poll.sh"),
+	// Primary: sdk/openclaw/ inside Vel root
+	candidates := []string{}
+	if velRoot != "" {
+		candidates = append(candidates, filepath.Join(velRoot, "sdk", "openclaw", "claude-usage-poll.sh"))
 	}
-
-	// Also check VEL_ROOT if set
-	if root := os.Getenv("VEL_ROOT"); root != "" {
-		candidates = append([]string{
-			filepath.Join(root, "sdk", "openclaw", "claude-usage-poll.sh"),
-		}, candidates...)
-	}
+	// Fallback: workspace skill location
+	candidates = append(candidates, filepath.Join(home, ".openclaw/workspace/skills/claude-usage-monitor/scripts/claude-usage-poll.sh"))
 
 	var scriptPath string
 	for _, p := range candidates {
@@ -34,7 +41,7 @@ func RefreshUsage() error {
 	}
 
 	if scriptPath == "" {
-		log.Printf("[vel] RefreshUsage: no poll script found")
+		log.Printf("[vel] RefreshUsage: no poll script found (checked sdk/openclaw/)")
 		return nil
 	}
 
@@ -44,6 +51,6 @@ func RefreshUsage() error {
 		log.Printf("[vel] RefreshUsage: script failed: %v", err)
 		return err
 	}
-	log.Printf("[vel] RefreshUsage: poll complete")
+	log.Printf("[vel] RefreshUsage: poll complete (%s)", scriptPath)
 	return nil
 }
