@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/go-chi/httplog/v2"
+
+	vel "vel/pkg/vel"
 )
 
 // responseRecorder wraps http.ResponseWriter to capture status code and bytes written.
@@ -104,9 +106,22 @@ func RequestLoggerMiddleware(logger *slog.Logger, cfg DebugConfig) func(http.Han
 	httplogHandler := httplog.Handler(httpLogger)
 
 	return func(next http.Handler) http.Handler {
-		// If no ring buffer, just use httplog directly — minimal overhead.
+		// If no ring buffer, use httplog + error capture only.
 		if !cfg.AIDebug || globalBuffer == nil {
-			return httplogHandler(next)
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				rec := &responseRecorder{ResponseWriter: w, status: 200}
+				httplogHandler(next).ServeHTTP(rec, r)
+				if rec.status >= 500 {
+					vel.LogError(vel.ErrorEntry{
+						Timestamp: time.Now(),
+						Path:      r.URL.Path,
+						Method:    r.Method,
+						Status:    rec.status,
+						Code:      fmt.Sprintf("HTTP_%d", rec.status),
+						Message:   fmt.Sprintf("%s %s → %d", r.Method, r.URL.Path, rec.status),
+					})
+				}
+			})
 		}
 
 		// With ring buffer: wrap to capture request data, then delegate to httplog.
@@ -150,6 +165,18 @@ func RequestLoggerMiddleware(logger *slog.Logger, cfg DebugConfig) func(http.Han
 			}
 
 			globalBuffer.Add(entry)
+
+			// Record 5xx errors to the error log panel
+			if rec.status >= 500 {
+				vel.LogError(vel.ErrorEntry{
+					Timestamp: start,
+					Path:      r.URL.Path,
+					Method:    r.Method,
+					Status:    rec.status,
+					Code:      fmt.Sprintf("HTTP_%d", rec.status),
+					Message:   fmt.Sprintf("%s %s → %d (%dms)", r.Method, r.URL.Path, rec.status, latency.Milliseconds()),
+				})
+			}
 		})
 	}
 }

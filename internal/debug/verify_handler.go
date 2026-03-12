@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -59,6 +60,9 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 
 	// ── Runtime check 3: App verify.json http_get checks (via raw mux, bypassing auth) ──
 	checks = append(checks, checkAppVerifyHTTPGet(info)...)
+
+	// ── Runtime check 4: deploy.sh health ──
+	checks = append(checks, checkDeployScript(info)...)
 
 	// Tally
 	passed, failed, skipped := 0, 0, 0
@@ -362,6 +366,82 @@ func checkAppVerifyHTTPGet(info *ServerInfo) []RuntimeCheckResult {
 				Name:   checkName,
 				Status: "ok",
 				Detail: fmt.Sprintf("HTTP %d", resp.StatusCode),
+				Layer:  3,
+			})
+		}
+	}
+
+	return results
+}
+
+// checkDeployScript validates that deploy.sh exists, has valid bash syntax,
+// and can detect the correct systemd service.
+func checkDeployScript(info *ServerInfo) []RuntimeCheckResult {
+	var results []RuntimeCheckResult
+	rootDir := info.RootDir
+
+	// Find deploy.sh
+	deployScript := filepath.Join(rootDir, "sdk", "vel", "deploy.sh")
+	if _, err := os.Stat(deployScript); err != nil {
+		deployScript = filepath.Join(rootDir, "deploy.sh")
+	}
+
+	// Check 1: deploy.sh exists
+	if _, err := os.Stat(deployScript); err != nil {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:deploy:script-exists",
+			Status: "fail",
+			Detail: "deploy.sh not found at sdk/vel/deploy.sh or root",
+			Hint:   "Copy sdk/vel/deploy.sh.example to sdk/vel/deploy.sh",
+			Layer:  3,
+		})
+		return results
+	}
+	results = append(results, RuntimeCheckResult{
+		Name:   "runtime:deploy:script-exists",
+		Status: "ok",
+		Detail: deployScript,
+		Layer:  3,
+	})
+
+	// Check 2: bash syntax valid
+	cmd := exec.Command("bash", "-n", deployScript)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:deploy:bash-syntax",
+			Status: "fail",
+			Detail: strings.TrimSpace(string(out)),
+			Hint:   "Fix syntax errors in deploy.sh",
+			Layer:  3,
+		})
+		return results
+	}
+	results = append(results, RuntimeCheckResult{
+		Name:   "runtime:deploy:bash-syntax",
+		Status: "ok",
+		Detail: "syntax valid",
+		Layer:  3,
+	})
+
+	// Check 3: VEL_DIR resolves correctly
+	// Run the script's directory resolution logic to verify it points to rootDir
+	resolveCmd := exec.Command("bash", "-c", fmt.Sprintf(
+		`cd "$(dirname "%s")/../.." && pwd`, deployScript))
+	if out, err := resolveCmd.Output(); err == nil {
+		resolved := strings.TrimSpace(string(out))
+		if resolved == rootDir {
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:deploy:vel-dir",
+				Status: "ok",
+				Detail: fmt.Sprintf("resolves to %s", resolved),
+				Layer:  3,
+			})
+		} else {
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:deploy:vel-dir",
+				Status: "fail",
+				Detail: fmt.Sprintf("resolves to %s, expected %s", resolved, rootDir),
+				Hint:   "deploy.sh VEL_DIR must resolve to the Vel root directory",
 				Layer:  3,
 			})
 		}
