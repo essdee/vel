@@ -92,7 +92,11 @@ Use `$BOT_USERNAME` in the config below — do NOT guess the username format.
 
 ## Step 4 — Install apps (optional)
 
-Vel discovers apps from the `apps/` directory. Each app is a subdirectory with an `app.json`.
+Vel discovers apps from two locations:
+1. `apps/` subdirectory (default, backward compatible)
+2. `VEL_APPS` environment variable (external directory, recommended for production)
+
+External apps (VEL_APPS) take precedence over internal ones when names conflict. Each app is a subdirectory with an `app.json`.
 
 ```bash
 cd <install-dir>/apps/
@@ -303,7 +307,7 @@ curl -s -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setChatMenuButton" \
 │   ├── panels/          # Panel registry
 │   ├── schema/          # Panel manifest schema
 │   └── server/          # HTTP server
-├── apps/                # Installed apps (each with app.json)
+├── apps/                # Apps (or use VEL_APPS for external dir) (each with app.json)
 │   ├── velboard/        # Monitoring panels
 │   └── velbridge/        # Browser relay
 └── custom/              # Custom static pages
