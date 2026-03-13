@@ -46,6 +46,14 @@ type FileDataSource struct {
 	Type     string `json:"type"`
 	Path     string `json:"path"`
 	Interval string `json:"interval"` // "2s", "10s", "1m"
+	Producer *DataProducer `json:"producer,omitempty"`
+}
+
+// DataProducer declares how a data source file gets populated.
+// Used by vel verify to statically check that the infrastructure is in place.
+type DataProducer struct {
+	Script string `json:"script"` // path to the script (relative to app dir)
+	Cron   string `json:"cron"`   // expected crontab pattern (for documentation, not enforced)
 }
 
 type ParsedDataSource struct {
@@ -53,6 +61,7 @@ type ParsedDataSource struct {
 	Type     string
 	Path     string
 	Interval time.Duration
+	Producer *DataProducer
 }
 
 type AppError struct {
@@ -265,6 +274,7 @@ func discoverFromDir(appsDir string) ([]*App, []AppError) {
 						Type:     ds.Type,
 						Path:     ds.Path,
 						Interval: dur,
+						Producer: ds.Producer,
 					})
 				}
 			}

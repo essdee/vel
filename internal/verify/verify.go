@@ -442,9 +442,14 @@ func checkPanels(registry *panels.Registry) []CheckResult {
 }
 
 // checkPanelData verifies data source files/generators exist for panels that need them.
+// Also checks producer infrastructure (scripts, crontab entries) if declared.
 func checkPanelData(appList []*apps.App) []CheckResult {
 	var results []CheckResult
 	home, _ := os.UserHomeDir()
+
+	// Read crontab once for all checks
+	crontabOut, _ := exec.Command("crontab", "-l").Output()
+	crontab := string(crontabOut)
 
 	for _, app := range appList {
 		for _, ds := range app.ParsedSources {
@@ -467,6 +472,45 @@ func checkPanelData(appList []*apps.App) []CheckResult {
 					Status: "ok",
 					Detail: fmt.Sprintf("file exists: %s", ds.Path),
 				})
+			}
+
+			// Check producer infrastructure if declared
+			if ds.Producer != nil && ds.Producer.Script != "" {
+				producerName := fmt.Sprintf("data:%s:%s:producer", app.Name, ds.Name)
+				scriptPath := ds.Producer.Script
+				// Resolve relative paths against app directory
+				if !filepath.IsAbs(scriptPath) {
+					scriptPath = filepath.Join(app.Dir, scriptPath)
+				}
+				// Expand ~ to home dir
+				if strings.HasPrefix(scriptPath, "~/") {
+					scriptPath = filepath.Join(home, scriptPath[2:])
+				}
+
+				if _, err := os.Stat(scriptPath); err != nil {
+					results = append(results, CheckResult{
+						Name:   producerName,
+						Status: "fail",
+						Detail: fmt.Sprintf("producer script not found: %s", scriptPath),
+						Hint:   "This script generates the data file. Ensure it exists and is executable.",
+					})
+				} else {
+					// Check if it's in crontab
+					if crontab != "" && !strings.Contains(crontab, filepath.Base(scriptPath)) {
+						results = append(results, CheckResult{
+							Name:   producerName,
+							Status: "warn",
+							Detail: fmt.Sprintf("script exists but not found in crontab: %s", filepath.Base(scriptPath)),
+							Hint:   "Data source may not be updating. Check crontab -l.",
+						})
+					} else {
+						results = append(results, CheckResult{
+							Name:   producerName,
+							Status: "ok",
+							Detail: fmt.Sprintf("script exists + crontab entry found"),
+						})
+					}
+				}
 			}
 		}
 	}
