@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -86,9 +87,11 @@ func FetchRuntimeChecks(debugPort int) ([]CheckResult, bool) {
 	}
 
 	url := fmt.Sprintf("http://localhost:%d/debug/verify", debugPort)
+	log.Printf("[verify] Attempting runtime checks at %s", url)
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {
+		log.Printf("[verify] Debug server unreachable at %s: %v", url, err)
 		return nil, false
 	}
 	defer resp.Body.Close()

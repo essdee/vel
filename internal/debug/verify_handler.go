@@ -45,7 +45,9 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 	var checks []RuntimeCheckResult
 
 	// ── Runtime check 1: Endpoint data correctness (via raw mux, bypassing auth) ──
-	checks = append(checks, checkEndpointViaHandler(info.Mux, "/api/health", "runtime:endpoint:/api/health", 200, "", 2)...)
+	// Note: /api/health is NOT checked here to avoid a deadlock — /api/health calls
+	// FetchRuntimeChecks which calls /debug/verify which would call back /api/health
+	// via checkEndpointViaHandler, hitting the health cache mutex. Circular.
 
 	// Check /dashboard serves HTML
 	checks = append(checks, checkEndpointViaHandler(info.Mux, "/dashboard", "runtime:endpoint:/dashboard", 200, "html", 2)...)
