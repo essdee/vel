@@ -14,10 +14,11 @@ import (
 
 // Options holds build command options.
 type Options struct {
-	RootDir string
-	Mode    string // "strict" or "bypass"
-	Output  string // output binary name
-	Keep    bool   // keep _build/ directory
+	RootDir      string // project root (where apps/, config/ live)
+	FrameworkDir string // framework source dir (where main.go, go.mod, internal/, pkg/ live)
+	Mode         string // "strict" or "bypass"
+	Output       string // output binary name
+	Keep         bool   // keep _build/ directory
 }
 
 // Tier1Packages are always allowed (no declaration needed).
@@ -87,6 +88,11 @@ type Violation struct {
 
 // Run executes the build process.
 func Run(opts Options) error {
+	// Default FrameworkDir to RootDir for backward compat
+	if opts.FrameworkDir == "" {
+		opts.FrameworkDir = opts.RootDir
+	}
+
 	fmt.Println("\n⚡ vel build")
 	fmt.Printf("  Mode: %s\n", opts.Mode)
 
@@ -136,8 +142,8 @@ func Run(opts Options) error {
 		fmt.Println("  ✓ All imports pass capability checks")
 	}
 
-	// Step 3: Set up _build/ directory
-	buildDir := filepath.Join(opts.RootDir, "_build")
+	// Step 3: Set up _build/ directory (in framework dir, not project root)
+	buildDir := filepath.Join(opts.FrameworkDir, "_build")
 	if err := os.RemoveAll(buildDir); err != nil {
 		return fmt.Errorf("cleaning _build/: %w", err)
 	}
@@ -189,8 +195,8 @@ func Run(opts Options) error {
 
 	// Step 6: Copy main.go and generate appimports.go
 	fmt.Println("\n  Generating app imports...")
-	// Copy the real main.go
-	mainSrc, err := os.ReadFile(filepath.Join(opts.RootDir, "main.go"))
+	// Copy the real main.go (from framework dir)
+	mainSrc, err := os.ReadFile(filepath.Join(opts.FrameworkDir, "main.go"))
 	if err != nil {
 		return fmt.Errorf("reading main.go: %w", err)
 	}
@@ -204,7 +210,7 @@ func Run(opts Options) error {
 	}
 
 	// Step 7: Copy go.mod and go.sum, update go.mod for wrapper module
-	if err := setupBuildModule(opts.RootDir, buildDir); err != nil {
+	if err := setupBuildModule(opts.FrameworkDir, buildDir); err != nil {
 		return err
 	}
 

@@ -370,11 +370,22 @@ func runBuild(args []string) {
 		outputName = filepath.Join("bin", "vel")
 	}
 
+	// Determine framework dir: if we're in a vel/ subdir of project root, use cwd
+	// Otherwise, check if project root has a vel/ subdir
+	frameworkDir, _ := os.Getwd()
+	if frameworkDir == rootDir {
+		// Running from project root — framework might be in vel/ subdir
+		if _, err := os.Stat(filepath.Join(rootDir, "vel", "main.go")); err == nil {
+			frameworkDir = filepath.Join(rootDir, "vel")
+		}
+	}
+
 	opts := build.Options{
-		RootDir: rootDir,
-		Mode:    *mode,
-		Output:  outputName,
-		Keep:    *keep,
+		RootDir:      rootDir,
+		FrameworkDir: frameworkDir,
+		Mode:         *mode,
+		Output:       outputName,
+		Keep:         *keep,
 	}
 
 	if err := build.Run(opts); err != nil {
