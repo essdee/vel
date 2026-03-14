@@ -108,7 +108,24 @@ func Run(opts Options) error {
 		return err
 	}
 	if len(apps) == 0 {
-		fmt.Println("  No apps with Go code found. Nothing to build.")
+		fmt.Println("  No apps with Go code found. Building base framework...")
+		// Still produce a binary — the framework works without any Go apps
+		outputPath := filepath.Join(opts.RootDir, "bin", "vel")
+		if opts.FrameworkDir != "" {
+			outputPath = filepath.Join(filepath.Dir(opts.FrameworkDir), "bin", "vel")
+		}
+		os.MkdirAll(filepath.Dir(outputPath), 0755)
+		cmd := exec.Command("go", "build", "-o", outputPath, ".")
+		cmd.Dir = opts.FrameworkDir
+		if opts.FrameworkDir == "" {
+			cmd.Dir = opts.RootDir
+		}
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("go build failed: %w", err)
+		}
+		fmt.Printf("\n  ✓ Build complete: %s\n", outputPath)
 		return nil
 	}
 
