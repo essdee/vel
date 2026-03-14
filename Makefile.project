@@ -1,0 +1,18 @@
+# Vel Project Makefile
+# Copy this to your project root (parent of vel/)
+#
+# Usage:
+#   make build   — compile the vel binary
+#   make start   — run the server
+#   make clean   — remove build artifacts
+
+.PHONY: build start clean
+
+build:
+	cd vel && go run . build
+
+start:
+	./bin/vel start
+
+clean:
+	rm -rf bin/ _build/
