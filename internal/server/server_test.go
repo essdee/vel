@@ -69,7 +69,7 @@ func newTestServer(t *testing.T) (http.Handler, string) {
 		Hooks:  hooks.New(),
 	}
 
-	return NewServer(cfg), dir
+	return NewServer(cfg).Handler, dir
 }
 
 func doRequest(handler http.Handler, method, path string, body string, headers map[string]string) *httptest.ResponseRecorder {
@@ -379,7 +379,7 @@ func TestCustomRoutes(t *testing.T) {
 		Hooks: hooks.New(),
 	}
 
-	h := NewServer(cfg)
+	h := NewServer(cfg).Handler
 	// Request the directory root — FileServer serves index.html
 	rr := doRequest(h, "GET", "/mysite/", "", map[string]string{"Accept-Encoding": "identity"})
 	if rr.Code != 200 {
@@ -412,7 +412,7 @@ func TestThemeServing(t *testing.T) {
 		Hooks:        hooks.New(),
 	}
 
-	h := NewServer(cfg)
+	h := NewServer(cfg).Handler
 	rr := doRequest(h, "GET", "/custom/theme/theme.css", "", map[string]string{"Accept-Encoding": "identity"})
 	if rr.Code != 200 {
 		t.Fatalf("expected 200 for theme, got %d", rr.Code)
@@ -443,7 +443,7 @@ func TestCustomRouteNonexistentDir(t *testing.T) {
 		Hooks: hooks.New(),
 	}
 
-	h := NewServer(cfg) // should not crash
+	h := NewServer(cfg).Handler // should not crash
 	rr := doRequest(h, "GET", "/ghost/index.html", "", map[string]string{"Accept-Encoding": "identity"})
 	if rr.Code != 404 {
 		t.Fatalf("expected 404 for nonexistent route dir, got %d", rr.Code)
@@ -474,7 +474,7 @@ func TestAPIPanelsIncludesCustomPanel(t *testing.T) {
 		Hooks:        hooks.New(),
 	}
 
-	h := NewServer(cfg)
+	h := NewServer(cfg).Handler
 	rr := doRequest(h, "GET", "/api/panels", "", map[string]string{"Accept-Encoding": "identity"})
 	var resp []map[string]interface{}
 	json.Unmarshal(rr.Body.Bytes(), &resp)
@@ -514,7 +514,7 @@ func TestAPIPanelsIncludesPluginPanel(t *testing.T) {
 		Hooks:        hooks.New(),
 	}
 
-	h := NewServer(cfg)
+	h := NewServer(cfg).Handler
 	rr := doRequest(h, "GET", "/api/panels", "", map[string]string{"Accept-Encoding": "identity"})
 	var resp []map[string]interface{}
 	json.Unmarshal(rr.Body.Bytes(), &resp)

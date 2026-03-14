@@ -14,7 +14,7 @@ func TestValidJSONFileRead(t *testing.T) {
 	os.WriteFile(path, []byte(`{"hello":"world"}`), 0644)
 
 	m := NewManager()
-	if err := m.AddFileSource("testapp", "src1", path, time.Second); err != nil {
+	if err := m.AddFileSource("testapp", "", "src1", path, time.Second); err != nil {
 		t.Fatal(err)
 	}
 	m.Start()
@@ -42,7 +42,7 @@ func TestInvalidJSON(t *testing.T) {
 	os.WriteFile(path, []byte(`{not json`), 0644)
 
 	m := NewManager()
-	m.AddFileSource("app", "bad", path, time.Second)
+	m.AddFileSource("app", "", "bad", path, time.Second)
 	m.Start()
 	defer m.Stop()
 
@@ -62,7 +62,7 @@ func TestInvalidJSON(t *testing.T) {
 
 func TestFileNotFound(t *testing.T) {
 	m := NewManager()
-	err := m.AddFileSource("app", "missing", "/tmp/vel-test-nonexistent-file.json", time.Second)
+	err := m.AddFileSource("app", "", "missing", "/tmp/vel-test-nonexistent-file.json", time.Second)
 	if err != nil {
 		t.Fatal("should allow missing files")
 	}
@@ -82,7 +82,7 @@ func TestFileNotFound(t *testing.T) {
 
 func TestMinimumInterval(t *testing.T) {
 	m := NewManager()
-	err := m.AddFileSource("app", "fast", "/tmp/x.json", 500*time.Millisecond)
+	err := m.AddFileSource("app", "", "fast", "/tmp/x.json", 500*time.Millisecond)
 	if err == nil {
 		t.Fatal("expected error for interval < 1s")
 	}
@@ -113,8 +113,8 @@ func TestNamespacing(t *testing.T) {
 	os.WriteFile(p2, []byte(`{"v":2}`), 0644)
 
 	m := NewManager()
-	m.AddFileSource("app1", "data", p1, time.Second)
-	m.AddFileSource("app2", "data", p2, time.Second)
+	m.AddFileSource("app1", "", "data", p1, time.Second)
+	m.AddFileSource("app2", "", "data", p2, time.Second)
 	m.Start()
 	defer m.Stop()
 
@@ -140,7 +140,7 @@ func TestGetAllData(t *testing.T) {
 	os.WriteFile(path, []byte(`{"k":"v"}`), 0644)
 
 	m := NewManager()
-	m.AddFileSource("myapp", "src", path, time.Second)
+	m.AddFileSource("myapp", "", "src", path, time.Second)
 	m.Start()
 	defer m.Stop()
 

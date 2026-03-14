@@ -62,7 +62,6 @@ One Go binary. No Node.js. No Python. No Docker. No runtime dependencies. `vel b
 | App | What it does | Install |
 |-----|-------------|---------|
 | [VelMetrics](https://github.com/karthikeyan5/velmetrics) | Server monitoring — CPU, memory, disk, processes | `git clone` into apps/ |
-| [VelClawBoard](https://github.com/karthikeyan5/velclawboard) | OpenClaw command center — usage, sessions, models | `git clone` into apps/ |
 | [VelBridge](https://github.com/karthikeyan5/velbridge) | Your agent controls your browser. Pair with a code, watch it work. | `git clone` into apps/ |
 
 These apps don't fork Vel. They don't conflict with each other. They compose. That's the point.
