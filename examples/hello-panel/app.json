@@ -1,0 +1,5 @@
+{
+  "name": "hello-panel",
+  "description": "A minimal Vel app that displays a greeting with the current timestamp.",
+  "version": "0.1.0"
+}

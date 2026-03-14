@@ -1,6 +1,9 @@
 # Email Setup for Vel (Magic Link Delivery)
 
-> **Status: OPTIONAL** — Magic links work without email. The agent generates links via API and delivers them through Telegram or other channels. Email is only needed for self-service login (user enters email on login page).
+> **⚠️ This entire setup is OPTIONAL.** You do NOT need email or Himalaya to use Vel.
+> Magic links work without email — the agent generates links via API and delivers them through Telegram or other channels.
+> Email (via Himalaya) is only needed if you want **self-service magic link email delivery** (where a user enters their email on the login page and receives the link by email).
+> Most deployments skip this entirely.
 
 ## How It Works
 

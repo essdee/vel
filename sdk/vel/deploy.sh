@@ -19,6 +19,7 @@ if [ -f "$VEL_DIR/.env" ]; then
             OPENCLAW_GATEWAY_TOKEN) OPENCLAW_GATEWAY_TOKEN="${value}" ;;
             OPENCLAW_GATEWAY_PORT) OPENCLAW_GATEWAY_PORT="${value}" ;;
             VEL_APPS) VEL_APPS="${value}" ;;
+            VEL_SERVICE_NAME) VEL_SERVICE_NAME="${value}" ;;
         esac
     done < "$VEL_DIR/.env"
 fi
@@ -26,28 +27,35 @@ OPENCLAW_GATEWAY_TOKEN="${OPENCLAW_GATEWAY_TOKEN:-}"
 OPENCLAW_GATEWAY_PORT="${OPENCLAW_GATEWAY_PORT:-18789}"
 VEL_APPS="${VEL_APPS:-}"
 
-# Auto-detect systemd service name by finding which service runs from this dir
-SERVICE_NAME=""
-for svc in openclaw-dashboard openclaw-dashboard-staging; do
-    unit_path=$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)
-    if [ -n "$unit_path" ] && grep -q "$VEL_DIR" "$unit_path" 2>/dev/null; then
-        SERVICE_NAME="$svc"
-        break
-    fi
-done
-# Fallback: check user services
-if [ -z "$SERVICE_NAME" ]; then
-    for svc in openclaw-dashboard openclaw-dashboard-staging; do
-        unit_path=$(systemctl --user show "$svc" -p FragmentPath --value 2>/dev/null || true)
+# Determine systemd service name
+# Priority: VEL_SERVICE_NAME env var > auto-detect > default
+if [ -n "${VEL_SERVICE_NAME:-}" ]; then
+    SERVICE_NAME="$VEL_SERVICE_NAME"
+else
+    # Auto-detect systemd service name by finding which service runs from this dir
+    SERVICE_NAME=""
+    for svc in vel vel-staging; do
+        unit_path=$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)
         if [ -n "$unit_path" ] && grep -q "$VEL_DIR" "$unit_path" 2>/dev/null; then
             SERVICE_NAME="$svc"
             break
         fi
     done
-fi
-if [ -z "$SERVICE_NAME" ]; then
-    echo "❌ Could not auto-detect systemd service for $VEL_DIR"
-    exit 1
+    # Fallback: check user services
+    if [ -z "$SERVICE_NAME" ]; then
+        for svc in vel vel-staging; do
+            unit_path=$(systemctl --user show "$svc" -p FragmentPath --value 2>/dev/null || true)
+            if [ -n "$unit_path" ] && grep -q "$VEL_DIR" "$unit_path" 2>/dev/null; then
+                SERVICE_NAME="$svc"
+                break
+            fi
+        done
+    fi
+    if [ -z "$SERVICE_NAME" ]; then
+        echo "❌ Could not auto-detect systemd service for $VEL_DIR"
+        echo "   Set VEL_SERVICE_NAME env var (e.g., vel or vel-staging)"
+        exit 1
+    fi
 fi
 
 echo "⚡ Vel Deploy"

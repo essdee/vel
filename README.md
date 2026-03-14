@@ -47,7 +47,7 @@ You get:       a live dashboard panel with real-time data
 Built for AI developers from day one. JSON manifests (agents corrupt JSON less than code). 5-function public API (less to hallucinate). Elm-quality error messages. This entire framework was built through a Telegram chat — no human wrote a line of code.
 
 ### 🛡️ Structurally Safe
-The wrong code won't compile. Apps declare what they import, `vel build` enforces it at compile time. `os/exec` is blocked by default. In a world where [373 OpenClaw skills were flagged as malicious](https://github.com/VoltAgent/awesome-openclaw-skills), Vel makes the unsafe path impossible.
+The wrong code won't compile. Apps declare what they import, `vel build` enforces it at compile time. `os/exec` is blocked by default. In a world where [hundreds of OpenClaw skills have been flagged as potentially malicious](https://github.com/VoltAgent/awesome-openclaw-skills), Vel makes the unsafe path impossible.
 
 ### 🧩 Composable
 Install anything. Remove anything. Nothing else breaks. Every app is independent. No dependency hell. No version conflicts. Add one, remove one — everything else keeps working.
