@@ -1,0 +1,62 @@
+#!/bin/bash
+# Vel Deploy Script — Example
+#
+# The production deploy script is at sdk/vel/deploy.sh and auto-detects
+# your install directory, Go path, and systemd service name.
+#
+# To use it:
+#   cp sdk/vel/deploy.sh deploy.sh
+#   chmod +x deploy.sh
+#   ./deploy.sh
+#
+# Or run it directly:
+#   bash sdk/vel/deploy.sh
+#
+# If you need a customized deploy script, copy this file to deploy.sh
+# and edit the variables below.
+
+set -e
+
+# --- Customize these if needed ---
+# PROD_DIR defaults to the directory containing this script
+PROD_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Auto-detect Go
+GO="$(which go 2>/dev/null || echo /usr/local/go/bin/go)"
+
+# Auto-detect systemd service name
+SERVICE_NAME=""
+for svc in vel vel-staging; do
+    unit_path=$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)
+    if [ -n "$unit_path" ] && grep -q "$PROD_DIR" "$unit_path" 2>/dev/null; then
+        SERVICE_NAME="$svc"
+        break
+    fi
+done
+
+if [ -z "$SERVICE_NAME" ]; then
+    echo "❌ Could not auto-detect systemd service for $PROD_DIR"
+    echo "   Set SERVICE_NAME manually in this script."
+    exit 1
+fi
+
+echo "⚡ Vel Deploy → $SERVICE_NAME"
+echo ""
+
+cd "$PROD_DIR/vel"
+git pull --ff-only 2>/dev/null || echo "  (pull failed — skipping)"
+
+echo "🔨 Building..."
+$GO run . build
+
+echo "🔄 Restarting $SERVICE_NAME..."
+sudo systemctl restart "$SERVICE_NAME"
+sleep 2
+
+if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
+    echo "✅ Deploy complete!"
+else
+    echo "❌ Service failed to start!"
+    sudo journalctl -u "$SERVICE_NAME" --no-pager -n 20
+    exit 1
+fi
