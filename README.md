@@ -72,17 +72,20 @@ These apps don't fork Vel. They don't conflict with each other. They compose. Th
 ## Quick start
 
 ```bash
-# Clone
+# Set up project directory
+mkdir my-vel-project && cd my-vel-project
+
+# Clone the framework
 git clone https://github.com/essdee/vel.git
-cd vel
 
 # Configure
-cp config.example.json config.json
-# Edit config.json with your bot token and user IDs
+mkdir -p config
+cp vel/config.example.json config/vel.json
+# Edit config/vel.json with your bot token and user IDs
 
 # Build and run
-go run . build
-BOT_TOKEN=your-token ./vel
+cd vel && go run . build && cd ..
+BOT_TOKEN=your-token ./bin/vel
 ```
 
 Open `localhost:3700`. That's it.
@@ -92,7 +95,8 @@ Open `localhost:3700`. That's it.
 ```bash
 cd apps/
 git clone https://github.com/karthikeyan5/velmetrics.git
-cd .. && ./vel build && ./vel
+cd ../vel && go run . build && cd ..
+./bin/vel
 ```
 
 Reload the page. Six new monitoring panels appear. No config. No restart. Just rebuild and serve.

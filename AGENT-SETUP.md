@@ -39,22 +39,24 @@ go version || {
 ## Step 2 — Clone and build
 
 ```bash
-git clone https://github.com/essdee/vel.git <install-dir>
-cd <install-dir>
-go run . build
+mkdir -p <install-dir> && cd <install-dir>
+git clone https://github.com/essdee/vel.git vel
+cd vel && go run . build
 ```
 
-This compiles Vel and any installed apps into a single `./vel` binary. After the first build, you can use `./vel build` instead of `go run . build`.
+This compiles Vel and any installed apps into a single `bin/vel` binary in the project root. After the first build, you can use `../bin/vel build` or run `go run . build` from the `vel/` directory.
 
 ---
 
 ## Step 3 — Configure
 
 ```bash
-cp config.example.json config.json
+cd <install-dir>
+mkdir -p config
+cp vel/config.example.json config/vel.json
 ```
 
-Edit `config.json`:
+Edit `config/vel.json`:
 
 ```json
 {
@@ -79,7 +81,7 @@ Edit `config.json`:
 Set the bot token and fetch the bot username (don't guess it):
 
 ```bash
-echo "BOT_TOKEN=<token>" > .env
+echo "BOT_TOKEN=<token>" > <install-dir>/.env
 
 # Get the actual bot username from Telegram API
 BOT_USERNAME=$(curl -s "https://api.telegram.org/bot<token>/getMe" | python3 -c "import sys,json; print(json.load(sys.stdin)['result']['username'])")
@@ -92,14 +94,12 @@ Use `$BOT_USERNAME` in the config below — do NOT guess the username format.
 
 ## Step 4 — Install apps (optional)
 
-Vel discovers apps from two locations:
-1. `apps/` subdirectory (default, backward compatible)
-2. `VEL_APPS` environment variable (external directory, recommended for production)
+Vel discovers apps from `apps/` in the project root. The `VEL_APPS` environment variable is also supported for custom locations, but is no longer required — apps in `<install-dir>/apps/` are auto-discovered.
 
-External apps (VEL_APPS) take precedence over internal ones when names conflict. Each app is a subdirectory with an `app.json`.
+Each app is a subdirectory with an `app.json`.
 
 ```bash
-cd <install-dir>/apps/
+mkdir -p <install-dir>/apps && cd <install-dir>/apps/
 
 # Example: install Velboard (monitoring panels)
 git clone https://github.com/karthikeyan5/velboard.git
@@ -111,10 +111,10 @@ git clone https://github.com/karthikeyan5/velbridge.git
 After adding apps, rebuild to include their server-side code:
 
 ```bash
-cd <install-dir> && ./vel build
+cd <install-dir>/vel && go run . build
 ```
 
-This scans apps for Go server packages, generates imports, and compiles a single binary. If this is your first build (no `./vel` binary yet), use `go run . build` instead.
+This scans apps for Go server packages, generates imports, and compiles a single binary at `<install-dir>/bin/vel`.
 
 ---
 
@@ -122,9 +122,9 @@ This scans apps for Go server packages, generates imports, and compiles a single
 
 ```bash
 cd <install-dir>
-./vel
+./bin/vel
 # Should print:
-# [Config] Loaded config.json
+# [Config] Loaded config/vel.json
 # ┌─ App Report ──────────────
 # │ Loaded: N
 # ...
@@ -147,7 +147,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=<install-dir>
-ExecStart=<install-dir>/vel
+ExecStart=<install-dir>/bin/vel
 EnvironmentFile=<install-dir>/.env
 Restart=always
 RestartSec=5
@@ -290,27 +290,38 @@ curl -s -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setChatMenuButton" \
 ## Directory Structure
 
 ```
-<install-dir>/
-├── main.go              # Entry point
-├── config.json          # User configuration
-├── .env                 # BOT_TOKEN=...
-├── core/
-│   ├── public/          # Static assets (shell.html, sw.js)
-│   ├── panels/          # Core panels (built-in)
-│   └── vendor/          # Vendored JS libraries
-├── internal/
-│   ├── apps/            # App discovery
-│   ├── auth/            # Telegram auth
-│   ├── data/            # Data layer
-│   ├── datasource/      # File polling data sources
-│   ├── hooks/           # Event hooks
-│   ├── panels/          # Panel registry
-│   ├── schema/          # Panel manifest schema
-│   └── server/          # HTTP server
-├── apps/                # Apps (or use VEL_APPS for external dir) (each with app.json)
-│   ├── velboard/        # Monitoring panels
-│   └── velbridge/        # Browser relay
-└── custom/              # Custom static pages
+<install-dir>/                   # Project root
+├── vel/                         # Framework git repo
+│   ├── main.go                  # Entry point
+│   ├── config.example.json      # Config template
+│   ├── core/
+│   │   ├── public/              # Static assets (shell.html, sw.js)
+│   │   ├── panels/              # Core panels (built-in)
+│   │   └── vendor/              # Vendored JS libraries
+│   ├── internal/
+│   │   ├── apps/                # App discovery
+│   │   ├── auth/                # Telegram auth
+│   │   ├── data/                # Data layer
+│   │   ├── datasource/          # File polling data sources
+│   │   ├── hooks/               # Event hooks
+│   │   ├── panels/              # Panel registry
+│   │   ├── schema/              # Panel manifest schema
+│   │   └── server/              # HTTP server
+│   └── custom/                  # Custom static pages
+├── apps/                        # App git repos (each with app.json)
+│   ├── velboard/                # Monitoring panels
+│   └── velbridge/               # Browser relay
+├── config/
+│   ├── vel.json                 # Main configuration
+│   └── users.json               # User data
+├── data/                        # Runtime databases
+├── logs/                        # Log files
+├── public/                      # Static files served at /
+├── uploads/
+│   ├── public/                  # Public uploads
+│   └── private/                 # Private uploads
+├── bin/vel                      # Compiled binary
+└── .env                         # BOT_TOKEN=...
 ```
 
 ## App Format
@@ -340,7 +351,7 @@ Each app needs an `app.json`:
 Run the health check to confirm everything is working:
 
 ```bash
-./vel verify
+./bin/vel verify
 ```
 
 Expected output when everything is working:
@@ -348,7 +359,7 @@ Expected output when everything is working:
 ```
 ⚡ Vel Health Check
 
-  ✓ config — config.json valid
+  ✓ config — config/vel.json valid
   ✓ auth — bot token configured (.env)
   ✓ openclaw-cli — found at /home/<user>/.npm-global/bin/openclaw
 
@@ -396,7 +407,7 @@ func init() {
 ## Troubleshooting
 
 - **"BOT_TOKEN required"** → Set `BOT_TOKEN` in `.env` or environment
-- **No panels showing** → Check `config.json` `panels.order` includes panel IDs
+- **No panels showing** → Check `config/vel.json` `panels.order` includes panel IDs
 - **App not discovered** → Verify `apps/<name>/app.json` exists and is valid JSON
 - **WebSocket disconnects** → Ensure nginx has `Upgrade`/`Connection` proxy headers
 - **Auth fails** → Verify domain matches `authUrl` and BotFather `/setdomain`

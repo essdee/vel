@@ -144,7 +144,7 @@ hookEngine.On("core.server.ready", func() {
 
 ## 4. Add Custom Routes
 
-Config-driven static file serving:
+Config-driven static file serving (in `config/vel.json`):
 
 ```json
 { "routes": { "/screenshots/": "custom/screenshots", "/docs/": "custom/docs" } }
@@ -155,18 +155,20 @@ Config-driven static file serving:
 ## 5. Install an App
 
 ```bash
-# Apps can be in apps/ or the VEL_APPS directory
-cd apps/  # or: cd $VEL_APPS
+# Apps live in apps/ at the project root
+cd apps/
 git clone https://github.com/someone/vel-app-docker docker
 ```
 
-App panels discovered from both `apps/*/panels/*/manifest.json` and `$VEL_APPS/*/panels/*/manifest.json`.
+The `VEL_APPS` environment variable is also supported for custom locations, but `apps/` in the project root is auto-discovered by default.
+
+App panels discovered from `apps/*/panels/*/manifest.json` (and `$VEL_APPS/*/panels/*/manifest.json` if set).
 
 **If the app has Go server code** (a `server/` directory), you must run `vel build` to compile it into the binary:
 
 ```bash
-cd /path/to/vel
-./vel build
+cd vel/
+go run . build   # or: ../bin/vel build (if already built)
 ```
 
 Check `app.json` for a `"server"` field to know if this is needed.
@@ -225,8 +227,10 @@ func Register(mux *http.ServeMux, cfg vel.AppConfig) {
 ### Build and run
 
 ```bash
-./vel build   # compiles app server code into binary
-./vel start   # or just ./vel
+cd vel/
+go run . build   # compiles app server code into bin/vel
+cd ..
+./bin/vel         # start the server
 ```
 
 **Public API** (`vel/pkg/vel`):
@@ -263,9 +267,11 @@ func Register(mux *http.ServeMux, cfg vel.AppConfig) {
 ## Testing
 
 ```bash
+cd vel/
 go test ./...
 go build -o /dev/null .
-TEST_MODE=true BOT_TOKEN=dummy ./vel
+cd ..
+TEST_MODE=true BOT_TOKEN=dummy ./bin/vel
 curl http://localhost:3700/api/panels/my-panel
 ```
 
