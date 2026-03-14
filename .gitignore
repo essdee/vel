@@ -13,6 +13,8 @@ verify-log.json
 # Build artifacts
 _build/
 vell
+vel-staging
+vel.bak
 
 # Python
 __pycache__/

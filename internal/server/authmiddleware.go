@@ -195,6 +195,16 @@ func clearSessionCookie(w http.ResponseWriter, mgr *auth.AuthManager) {
 	})
 }
 
+// appPublicPrefixes holds dynamically registered public route prefixes from apps.
+// Set by the server during initialization via SetAppPublicRoutes.
+var appPublicPrefixes []string
+
+// SetAppPublicRoutes registers app-declared public route prefixes.
+// Called once during server initialization.
+func SetAppPublicRoutes(prefixes []string) {
+	appPublicPrefixes = prefixes
+}
+
 // isPublicPath returns true for paths that don't require authentication.
 func isPublicPath(path string) bool {
 	// Exact matches
@@ -205,12 +215,21 @@ func isPublicPath(path string) bool {
 		"/api/auth/magic-link/request":
 		return true
 	}
-	// Prefix matches
+	// Prefix matches (framework routes)
 	if strings.HasPrefix(path, "/public/") ||
 		strings.HasPrefix(path, "/core/vendor/") ||
 		strings.HasPrefix(path, "/custom/theme/") ||
-		strings.HasPrefix(path, "/relay/") {
+		strings.HasPrefix(path, "/bridge/debug/") ||
+		strings.HasPrefix(path, "/bridge/proxy/") ||
+		strings.HasPrefix(path, "/bridge/observe/") ||
+		strings.HasPrefix(path, "/bridge/diff/") {
 		return true
+	}
+	// Dynamic app public routes
+	for _, prefix := range appPublicPrefixes {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
 	}
 	return false
 }

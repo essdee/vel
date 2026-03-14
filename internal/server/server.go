@@ -1476,6 +1476,24 @@ func NewServer(cfg *Config) ServerResult {
 		fmt.Println("[Server] Pre-warmed openclaw-status cache")
 	}()
 
+	// Collect public routes from apps and register them with the auth middleware.
+	// Dashboard/framework routes (/api/, /dashboard, /auth/, etc.) can NEVER be made public.
+	var publicPrefixes []string
+	for _, app := range cfg.Apps {
+		for _, prefix := range app.PublicRoutes() {
+			// Safety: only allow app-owned prefixes (must not start with /api/, /auth/, /dashboard, etc.)
+			if strings.HasPrefix(prefix, "/api/") || strings.HasPrefix(prefix, "/auth/") ||
+				strings.HasPrefix(prefix, "/dashboard") || strings.HasPrefix(prefix, "/ws/") ||
+				strings.HasPrefix(prefix, "/login") {
+				fmt.Printf("[Server] WARNING: App %s tried to mark framework path %s as public — ignored\n", app.Name, prefix)
+				continue
+			}
+			publicPrefixes = append(publicPrefixes, prefix)
+			fmt.Printf("[Server] Public route: %s (from app %s)\n", prefix, app.Name)
+		}
+	}
+	SetAppPublicRoutes(publicPrefixes)
+
 	// Build handler chain
 	var handler http.Handler = mux
 

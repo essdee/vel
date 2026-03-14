@@ -22,6 +22,7 @@ type App struct {
 	OptionalDependencies map[string]string `json:"optionalDependencies"`
 	Panels       string            `json:"panels"`
 	Routes       map[string]Route  `json:"routes"`
+	Public       bool              `json:"public"`
 	Theme        string            `json:"theme"`
 	DataSources  json.RawMessage   `json:"data_sources"`
 	Tasks        json.RawMessage   `json:"tasks"`
@@ -40,6 +41,19 @@ type Route struct {
 	Dir    string `json:"dir"`
 	Target string `json:"target"` // for proxy type: e.g. "http://localhost:3800"
 	Cache  string `json:"cache"`  // "none" | "aggressive" | "" (default: no-cache for page, 1hr for static)
+	Public bool   `json:"public"` // if true, route is accessible without authentication
+}
+
+// PublicRoutes returns all route prefixes that should be publicly accessible.
+// Includes per-route "public: true" and app-level "public: true" (shorthand for all routes).
+func (a *App) PublicRoutes() []string {
+	var routes []string
+	for prefix, route := range a.Routes {
+		if a.Public || route.Public {
+			routes = append(routes, prefix)
+		}
+	}
+	return routes
 }
 
 type FileDataSource struct {

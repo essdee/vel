@@ -53,9 +53,9 @@ var BlacklistedFunctions = map[string][]string{
 
 // Tier2Categories map capability names to the packages they unlock.
 var Tier2Categories = map[string][]string{
-	"read":  {"os"},
-	"write": {"os"},
-	"net":   {"net/http", "net/url"},
+	"read":  {"os", "io", "path/filepath", "bufio"},
+	"write": {"os", "io", "path/filepath", "bufio"},
+	"net":   {"net", "net/http", "net/url"},
 	"env":   {"os"},
 	"db":    {"database/sql"},
 }
