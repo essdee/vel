@@ -174,9 +174,27 @@ func RunVerify(cfg VerifyConfig) VerifyResult {
 	}
 }
 
-// readDebugPort reads the debug port from config.json, defaulting to 6060.
+// resolveConfigPath finds the config file — new layout (config/vel.json) or legacy (config.json).
+func resolveConfigPath(rootDir string) string {
+	newPath := filepath.Join(rootDir, "config", "vel.json")
+	if _, err := os.Stat(newPath); err == nil {
+		return newPath
+	}
+	return filepath.Join(rootDir, "config.json")
+}
+
+// resolveUsersPath finds the users file — new layout (config/users.json) or legacy (users.json).
+func resolveUsersPath(rootDir string) string {
+	newPath := filepath.Join(rootDir, "config", "users.json")
+	if _, err := os.Stat(newPath); err == nil {
+		return newPath
+	}
+	return filepath.Join(rootDir, "users.json")
+}
+
+// readDebugPort reads the debug port from config, defaulting to 6060.
 func readDebugPort(rootDir string) int {
-	configPath := filepath.Join(rootDir, "config.json")
+	configPath := resolveConfigPath(rootDir)
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return 6060
@@ -310,23 +328,23 @@ func checkAppVerifyFileExists(rootDir string, appList []*apps.App) []CheckResult
 
 // ── Existing checks (unchanged) ──────────────────────────────────────────────
 
-// checkConfig verifies config.json exists and has required fields.
+// checkConfig verifies config exists and has required fields.
 func checkConfig(rootDir string) CheckResult {
-	configPath := filepath.Join(rootDir, "config.json")
+	configPath := resolveConfigPath(rootDir)
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return CheckResult{Name: "config", Status: "fail", Detail: "config.json not found"}
+		return CheckResult{Name: "config", Status: "fail", Detail: "config not found (tried config/vel.json and config.json)"}
 	}
 
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return CheckResult{Name: "config", Status: "fail", Detail: "config.json is not valid JSON: " + err.Error()}
+		return CheckResult{Name: "config", Status: "fail", Detail: "config is not valid JSON: " + err.Error()}
 	}
 
 	// Check required fields (flexible: authUrl or siteUrl, allowedTelegramUsers or allowedUsers)
 	var missing []string
 
-	// botToken is in .env, not config.json — skip here, handled by auth check
+	// botToken is in .env, not config — skip here, handled by auth check
 	// siteUrl / authUrl
 	if _, ok := raw["authUrl"]; !ok {
 		if _, ok2 := raw["siteUrl"]; !ok2 {
@@ -335,7 +353,7 @@ func checkConfig(rootDir string) CheckResult {
 	}
 
 	// User authorization: users.json (new auth) or allowedTelegramUsers/allowedUsers (legacy)
-	usersPath := filepath.Join(rootDir, "users.json")
+	usersPath := resolveUsersPath(rootDir)
 	hasUsers := false
 	if _, err := os.Stat(usersPath); err == nil {
 		hasUsers = true // new auth system with users.json
@@ -366,7 +384,7 @@ func checkConfig(rootDir string) CheckResult {
 			Detail: "missing fields: " + strings.Join(missing, ", "),
 		}
 	}
-	return CheckResult{Name: "config", Status: "ok", Detail: "config.json valid"}
+	return CheckResult{Name: "config", Status: "ok", Detail: "config valid"}
 }
 
 // checkAuth verifies a bot token is configured.
@@ -389,8 +407,8 @@ func checkAuth(rootDir string) CheckResult {
 		}
 	}
 
-	// Check config.json for token auth mode
-	configPath := filepath.Join(rootDir, "config.json")
+	// Check config for token auth mode
+	configPath := resolveConfigPath(rootDir)
 	if data, err := os.ReadFile(configPath); err == nil {
 		var raw map[string]json.RawMessage
 		if json.Unmarshal(data, &raw) == nil {
@@ -544,9 +562,9 @@ func checkTelegramDomain(rootDir string) CheckResult {
 	}
 	botID := parts[0]
 
-	// Get domain from config.json (authUrl or siteUrl)
+	// Get domain from config (authUrl or siteUrl)
 	domain := ""
-	configPath := filepath.Join(rootDir, "config.json")
+	configPath := resolveConfigPath(rootDir)
 	if data, err := os.ReadFile(configPath); err == nil {
 		var raw map[string]json.RawMessage
 		if json.Unmarshal(data, &raw) == nil {

@@ -211,9 +211,14 @@ func Run(opts Options) error {
 	// Step 8: Run go build
 	outputName := opts.Output
 	if outputName == "" {
-		outputName = "vel"
+		outputName = filepath.Join("bin", "vel")
 	}
 	outputPath := filepath.Join(opts.RootDir, outputName)
+
+	// Ensure output directory exists
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return fmt.Errorf("creating output dir: %w", err)
+	}
 
 	fmt.Printf("  Building binary → %s\n", outputName)
 	cmd := exec.Command("go", "build", "-o", outputPath, ".")

@@ -79,6 +79,28 @@ type AppConfig struct {
 	Staging bool `json:"staging"` // true = staging instance, disables production-only features
 }
 
+// resolveProjectRoot determines the project root directory.
+// Priority: VEL_PROJECT_ROOT env var > auto-detect (check if ../config/vel.json exists,
+// meaning we're inside vel/ subdir) > cwd.
+func resolveProjectRoot() string {
+	if envRoot := os.Getenv("VEL_PROJECT_ROOT"); envRoot != "" {
+		return envRoot
+	}
+	cwd, _ := os.Getwd()
+	// Auto-detect: if ../config/vel.json exists, we're in vel/ subdir
+	parentConfig := filepath.Join(cwd, "..", "config", "vel.json")
+	if _, err := os.Stat(parentConfig); err == nil {
+		return filepath.Dir(filepath.Dir(parentConfig))
+	}
+	// Fallback: check if config/vel.json exists in cwd (we ARE the project root)
+	cwdConfig := filepath.Join(cwd, "config", "vel.json")
+	if _, err := os.Stat(cwdConfig); err == nil {
+		return cwd
+	}
+	// Legacy fallback: config.json in cwd (old layout)
+	return cwd
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		// Default: start server (backward compatible)
@@ -140,7 +162,7 @@ func runVerify(args []string) {
 	verbose := fs.Bool("verbose", false, "Show all checks including passed ones")
 	fs.Parse(args)
 
-	rootDir, _ := os.Getwd()
+	rootDir := resolveProjectRoot()
 
 	if !*jsonMode {
 		fmt.Print("\n⚡ Vel Health Check\n\n")
@@ -337,16 +359,21 @@ func runVerify(args []string) {
 func runBuild(args []string) {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
 	mode := fs.String("mode", "strict", "Build mode: strict (default) or bypass")
-	output := fs.String("output", "vel", "Output binary name")
+	output := fs.String("output", "", "Output binary name (default: bin/vel)")
 	keep := fs.Bool("keep", false, "Keep _build/ directory for debugging")
 	fs.Parse(args)
 
-	rootDir, _ := os.Getwd()
+	rootDir := resolveProjectRoot()
+
+	outputName := *output
+	if outputName == "" {
+		outputName = filepath.Join("bin", "vel")
+	}
 
 	opts := build.Options{
 		RootDir: rootDir,
 		Mode:    *mode,
-		Output:  *output,
+		Output:  outputName,
 		Keep:    *keep,
 	}
 
@@ -357,7 +384,7 @@ func runBuild(args []string) {
 }
 
 func runCaps(args []string) {
-	rootDir, _ := os.Getwd()
+	rootDir := resolveProjectRoot()
 
 	if len(args) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage: vel caps <list|export> [app]\n")
@@ -428,7 +455,7 @@ func runTest(args []string) {
 	fs := flag.NewFlagSet("test", flag.ExitOnError)
 	fs.Parse(args)
 
-	rootDir, _ := os.Getwd()
+	rootDir := resolveProjectRoot()
 
 	fmt.Printf("\n⚡ Vel Test Runner\n\n")
 
@@ -624,7 +651,7 @@ func startTestServer(rootDir string, discoveredApps []*apps.App, fixture string)
 	cfg := &server.Config{
 		RootDir:      rootDir,
 		Workspace:    filepath.Dir(rootDir),
-		ConfigPath:   filepath.Join(rootDir, "config.json"),
+		ConfigPath:   filepath.Join(rootDir, "config", "vel.json"),
 		Port:         0,
 		Registry:     registry,
 		Order:        []string{},
@@ -667,7 +694,7 @@ func runStart(args []string) {
 	demoFlag := fs.Bool("demo", false, "Shortcut for --test-mode --fixture=demo")
 	fs.Parse(args)
 
-	rootDir, _ := os.Getwd()
+	rootDir := resolveProjectRoot()
 
 	// Resolve test mode / demo shortcut
 	testMode := *testModeFlag
@@ -692,17 +719,21 @@ func runStart(args []string) {
 		fmt.Printf("\n  ⚠️  Not for production use\n\n")
 	}
 
-	// Load config
-	configPath := filepath.Join(rootDir, "config.json")
+	// Load config — try new layout first, fall back to legacy
+	configPath := filepath.Join(rootDir, "config", "vel.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		// Legacy fallback
+		configPath = filepath.Join(rootDir, "config.json")
+	}
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Fatalf("[Config] Failed to load config.json: %s\nCopy config.example.json to config.json and configure it", err)
+		log.Fatalf("[Config] Failed to load config: %s\nExpected config/vel.json (or legacy config.json)", err)
 	}
 	var config AppConfig
 	if err := json.Unmarshal(configData, &config); err != nil {
-		log.Fatalf("[Config] Invalid config.json: %s", err)
+		log.Fatalf("[Config] Invalid config: %s", err)
 	}
-	fmt.Println("[Config] Loaded config.json")
+	fmt.Printf("[Config] Loaded %s\n", configPath)
 
 	// Set staging flag in SDK so apps can check vel.IsStaging()
 	vel.SetStaging(config.Staging)
@@ -713,8 +744,12 @@ func runStart(args []string) {
 	// BOT_TOKEN
 	botToken := os.Getenv("BOT_TOKEN")
 	if botToken == "" {
-		// Try .env file
-		envData, err := os.ReadFile(filepath.Join(rootDir, ".env"))
+		// Try .env file (check project root, then config/)
+		envPath := filepath.Join(rootDir, ".env")
+		if _, statErr := os.Stat(envPath); os.IsNotExist(statErr) {
+			envPath = filepath.Join(rootDir, "config", ".env")
+		}
+		envData, err := os.ReadFile(envPath)
 		if err == nil {
 			for _, line := range strings.Split(string(envData), "\n") {
 				if strings.HasPrefix(line, "BOT_TOKEN=") {
@@ -744,8 +779,11 @@ func runStart(args []string) {
 
 	fmt.Printf("[Auth] Mode: %s\n", authMode)
 
-	// Cookie secret
-	cookieSecretFile := filepath.Join(rootDir, ".cookie-secret")
+	// Cookie secret — try config/ first, fall back to root
+	cookieSecretFile := filepath.Join(rootDir, "config", ".cookie-secret")
+	if _, statErr := os.Stat(cookieSecretFile); os.IsNotExist(statErr) {
+		cookieSecretFile = filepath.Join(rootDir, ".cookie-secret")
+	}
 	cookieSecret, err := os.ReadFile(cookieSecretFile)
 	if err != nil {
 		secret := make([]byte, 32)
@@ -767,8 +805,11 @@ func runStart(args []string) {
 	auth.InitMode(authMode, config.Auth.Token)
 	auth.InitScopedTokens(config.Auth.Tokens)
 
-	// Init new auth system (Phase 2)
-	usersPath := filepath.Join(rootDir, "users.json")
+	// Init new auth system (Phase 2) — try new layout first
+	usersPath := filepath.Join(rootDir, "config", "users.json")
+	if _, statErr := os.Stat(usersPath); os.IsNotExist(statErr) {
+		usersPath = filepath.Join(rootDir, "users.json") // legacy fallback
+	}
 	var authManager *auth.AuthManager
 
 	// Run migration if needed
