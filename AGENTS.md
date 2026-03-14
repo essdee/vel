@@ -23,7 +23,7 @@ This file tells AI agents (Claude Code, Codex, etc.) how to work correctly with 
 go run . build
 
 # Restart service (if needed)
-sudo systemctl restart openclaw-dashboard-staging
+sudo systemctl restart vel
 
 # Verify
 ./vel verify --verbose
@@ -66,13 +66,13 @@ Verify runs checks in layers. If an outer layer fails, inner layers are skipped:
 ### Server not reachable (Layer 0)
 ```bash
 # Check service status
-sudo systemctl status openclaw-dashboard-staging
+sudo systemctl status vel
 
 # Check port from config
 grep '"port"' config.json
 
 # Start if stopped
-sudo systemctl start openclaw-dashboard-staging
+sudo systemctl start vel
 ```
 
 ### Auth probe failed (Layer 1)
@@ -186,8 +186,8 @@ import "vel/internal/server"
 // Get the authenticated identity
 identity := server.GetIdentity(r)
 if identity != nil {
-    identity.UserID   // "karthi"
-    identity.Name     // "Karthikeyan"
+    identity.UserID   // "admin"
+    identity.Name     // "Admin User"
     identity.Role     // "admin", "user", "viewer"
     identity.Provider // "telegram", "api_key", "magic_link"
 }
@@ -210,11 +210,11 @@ server.RequireScope("GET /api/*")(handler)  // specific scope
 {
   "users": [
     {
-      "id": "karthi",
-      "name": "Karthikeyan",
-      "email": "karthi@essdee.fit",
+      "id": "admin",
+      "name": "Admin User",
+      "email": "user@example.com",
       "role": "admin",
-      "identities": [{"provider": "telegram", "provider_id": "85720317"}]
+      "identities": [{"provider": "telegram", "provider_id": "123456789"}]
     }
   ],
   "api_keys": [
@@ -223,7 +223,7 @@ server.RequireScope("GET /api/*")(handler)  // specific scope
       "name": "usage-share",
       "key_hash": "sha256:...",
       "role": "viewer",
-      "scopes": ["GET /token-swap/api/usage"]
+      "scopes": ["GET /myapp/api/data"]
     }
   ]
 }
@@ -235,9 +235,9 @@ server.RequireScope("GET /api/*")(handler)  // specific scope
 vel auth create-key --name "my-key" --role viewer --scope "GET /api/data"
 vel auth list-keys
 vel auth revoke-key --id my-key
-vel auth magic-link --user karthi --expires 30
+vel auth magic-link --user admin --expires 30
 vel auth list-users
-vel auth add-user --id vignesh --name "Vignesh" --role user --telegram 37211163
+vel auth add-user --id newuser --name "New User" --role user --telegram 987654321
 ```
 
 ### API keys for cross-site access
@@ -247,11 +247,11 @@ Instead of `?token=` query params, use scoped API keys with Bearer auth:
 ```bash
 # Create a key with specific scopes
 vel auth create-key --name usage-share --role viewer \
-  --scope "GET /token-swap/api/usage" \
-  --scope "GET /token-swap/api/status"
+  --scope "GET /myapp/api/usage" \
+  --scope "GET /myapp/api/status"
 
 # Use it
-curl -H "Authorization: Bearer vel_ak_live_..." https://example.com/token-swap/api/status
+curl -H "Authorization: Bearer vel_ak_live_..." https://example.com/myapp/api/status
 ```
 
 ---
