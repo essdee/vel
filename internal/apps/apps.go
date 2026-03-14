@@ -180,7 +180,8 @@ func discoverFromDir(appsDir string) ([]*App, []AppError) {
 
 		data, err := os.ReadFile(manifestPath)
 		if err != nil {
-			// No app.json — skip silently
+			// No app.json — warn and skip
+			log.Printf("[apps] ⚠ Directory %q in apps/ has no app.json — skipping", entry.Name())
 			continue
 		}
 

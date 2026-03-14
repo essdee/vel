@@ -149,7 +149,7 @@ v0.1 is the foundation. Everything structural is frozen. Feature work builds on 
 
 By v0.9, you can build anything — accounting, inventory, CRM, HR — as composable Vel apps.
 
-📋 **[Full roadmap →](https://github.com/essdee/vel-project-notes/blob/main/ROADMAP.md)**
+📋 **[Full roadmap →](./ROADMAP.md)**
 
 ---
 
@@ -189,6 +189,7 @@ Every error message tells your agent **how to fix it**, not just what broke. Con
 | [CONVENTIONS.md](./CONVENTIONS.md) | Decision framework and naming |
 | [TESTING.md](./TESTING.md) | Testing strategy and conventions |
 | [AGENT-EXTEND.md](./AGENT-EXTEND.md) | Build your first Vel app |
+| [AUTH.md](./docs/AUTH.md) | Comprehensive authentication & authorization reference |
 
 ---
 

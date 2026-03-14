@@ -169,7 +169,12 @@ func runVerify(args []string) {
 	}
 
 	// Discover apps
-	discoveredApps, _ := apps.Discover(rootDir)
+	discoveredApps, appErrors := apps.Discover(rootDir)
+	if len(appErrors) > 0 {
+		for _, e := range appErrors {
+			fmt.Printf("  ⚠ %s\n", e)
+		}
+	}
 
 	// Build panel app list
 	var panelApps []panels.AppInfo
@@ -747,7 +752,7 @@ func runStart(args []string) {
 	}
 	configData, err := os.ReadFile(configPath)
 	if err != nil {
-		log.Fatalf("[Config] Failed to load config: %s\nExpected config/vel.json (or legacy config.json)", err)
+		log.Fatalf("[Config] Failed to load config: %s\n  Hint: Run vel from your project root directory (where config/ and apps/ live)\n  Expected: config/vel.json (or legacy config.json)\n  Example: cd /path/to/your/project && bin/vel start", err)
 	}
 	var config AppConfig
 	if err := json.Unmarshal(configData, &config); err != nil {
