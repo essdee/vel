@@ -101,8 +101,8 @@ Each app is a subdirectory with an `app.json`.
 ```bash
 mkdir -p <install-dir>/apps && cd <install-dir>/apps/
 
-# Example: install Velboard (monitoring panels)
-git clone https://github.com/karthikeyan5/velboard.git
+# Example: install VelMetrics (monitoring panels)
+git clone https://github.com/karthikeyan5/velmetrics.git
 
 # Example: install VelBridge (browser relay)
 git clone https://github.com/karthikeyan5/velbridge.git
@@ -309,7 +309,7 @@ curl -s -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setChatMenuButton" \
 │   │   └── server/              # HTTP server
 │   └── custom/                  # Custom static pages
 ├── apps/                        # App git repos (each with app.json)
-│   ├── velboard/                # Monitoring panels
+│   ├── velmetrics/              # Monitoring panels
 │   └── velbridge/               # Browser relay
 ├── config/
 │   ├── vel.json                 # Main configuration
@@ -369,7 +369,7 @@ Expected output when everything is working:
   ...
 
   Data sources:
-  ✓ velboard:sessions — file exists: ~/.openclaw/workspace/sessions-summary.json
+  ✓ velmetrics:sessions — file exists: ~/.openclaw/workspace/sessions-summary.json
 
   5 passed, 0 failed
 ```
