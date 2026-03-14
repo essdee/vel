@@ -12,9 +12,7 @@ Every code change **must** include corresponding documentation updates:
 - Contract change → update CONTRACTS.md
 - Architecture change → update ARCHITECTURE.md
 - Testing change → update TESTING.md
-- Breaking change → update BREAKING_CHANGES.md
-
-Enforced by CI — see `.github/workflows/docs-check.yml`.
+- Breaking change → note in CHANGELOG.md
 
 ---
 
