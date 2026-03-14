@@ -34,7 +34,8 @@ import (
 var _ = auth.IsTestMode
 
 type Config struct {
-	RootDir      string
+	RootDir      string // project root (where apps/, config/ live)
+	FrameworkDir string // framework source dir (where core/, main.go live); defaults to RootDir
 	Workspace    string
 	ConfigPath   string
 	Port         int
@@ -154,6 +155,11 @@ type ServerResult struct {
 }
 
 func NewServer(cfg *Config) ServerResult {
+	// Default FrameworkDir to RootDir for backward compat
+	if cfg.FrameworkDir == "" {
+		cfg.FrameworkDir = cfg.RootDir
+	}
+
 	// Initialize error logger before serving any requests.
 	vel.SetRoot(cfg.RootDir)
 	vel.InitErrorLog(filepath.Join(cfg.RootDir, "logs"))
@@ -181,7 +187,7 @@ func NewServer(cfg *Config) ServerResult {
 	}
 
 	// Pages — check if any app provides a landing page
-	landingFile := filepath.Join(cfg.RootDir, "core", "public", "landing.html")
+	landingFile := filepath.Join(cfg.FrameworkDir, "core", "public", "landing.html")
 	for _, app := range cfg.Apps {
 		if app.LandingPage != "" {
 			candidate := filepath.Join(app.Dir, app.LandingPage, "index.html")
@@ -212,14 +218,14 @@ func NewServer(cfg *Config) ServerResult {
 			}
 		}
 		if hasPanels {
-			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "shell.html"))
+			http.ServeFile(w, r, filepath.Join(cfg.FrameworkDir, "core", "public", "shell.html"))
 		} else {
-			http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "welcome.html"))
+			http.ServeFile(w, r, filepath.Join(cfg.FrameworkDir, "core", "public", "welcome.html"))
 		}
 	})
 
 	// Static files
-	publicDir := filepath.Join(cfg.RootDir, "core", "public")
+	publicDir := filepath.Join(cfg.FrameworkDir, "core", "public")
 	mux.Handle("/public/", http.StripPrefix("/public/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Service worker must never be cached — browser needs to always check for updates
 		if strings.HasSuffix(r.URL.Path, "sw.js") {
@@ -231,7 +237,7 @@ func NewServer(cfg *Config) ServerResult {
 		http.FileServer(http.Dir(publicDir)).ServeHTTP(w, r)
 	})))
 
-	vendorDir := filepath.Join(cfg.RootDir, "core", "vendor")
+	vendorDir := filepath.Join(cfg.FrameworkDir, "core", "vendor")
 	mux.Handle("/core/vendor/", http.StripPrefix("/core/vendor/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		w.Header().Set("Cache-Control", "public, max-age=604800")
@@ -330,7 +336,7 @@ func NewServer(cfg *Config) ServerResult {
 	}
 
 	// Theme support
-	themeFile := filepath.Join(cfg.RootDir, "custom", "theme", "theme.css")
+	themeFile := filepath.Join(cfg.FrameworkDir, "custom", "theme", "theme.css")
 	if _, err := os.Stat(themeFile); err == nil {
 		mux.HandleFunc("/custom/theme/theme.css", func(w http.ResponseWriter, r *http.Request) {
 			http.ServeFile(w, r, themeFile)
@@ -1293,7 +1299,7 @@ func NewServer(cfg *Config) ServerResult {
 			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
 			return
 		}
-		deployScript := filepath.Join(cfg.RootDir, "sdk", "vel", "deploy.sh")
+		deployScript := filepath.Join(cfg.FrameworkDir, "sdk", "vel", "deploy.sh")
 		// Fallback to legacy root location
 		if _, err := os.Stat(deployScript); err != nil {
 			deployScript = filepath.Join(cfg.RootDir, "deploy.sh")
@@ -1343,7 +1349,7 @@ func NewServer(cfg *Config) ServerResult {
 		lastGatewayRestart = time.Now()
 		gatewayRestartMu.Unlock()
 
-		scriptPath := filepath.Join(cfg.RootDir, "sdk", "openclaw", "restart.sh")
+		scriptPath := filepath.Join(cfg.FrameworkDir, "sdk", "openclaw", "restart.sh")
 		if _, err := os.Stat(scriptPath); err != nil {
 			w.WriteHeader(500)
 			writeJSON(w, map[string]interface{}{"error": "restart.sh not found in sdk/openclaw/"})
@@ -1458,11 +1464,11 @@ func NewServer(cfg *Config) ServerResult {
 	// Login page
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "login.html"))
+		http.ServeFile(w, r, filepath.Join(cfg.FrameworkDir, "core", "public", "login.html"))
 	})
 	mux.HandleFunc("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		http.ServeFile(w, r, filepath.Join(cfg.RootDir, "core", "public", "login.html"))
+		http.ServeFile(w, r, filepath.Join(cfg.FrameworkDir, "core", "public", "login.html"))
 	})
 
 	// WebSocket

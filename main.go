@@ -707,6 +707,15 @@ func runStart(args []string) {
 
 	rootDir := resolveProjectRoot()
 
+	// Determine framework dir (where core/, internal/, main.go live)
+	frameworkDir, _ := os.Getwd()
+	if frameworkDir == rootDir {
+		// Running from project root — check for vel/ subdir
+		if _, err := os.Stat(filepath.Join(rootDir, "vel", "main.go")); err == nil {
+			frameworkDir = filepath.Join(rootDir, "vel")
+		}
+	}
+
 	// Resolve test mode / demo shortcut
 	testMode := *testModeFlag
 	fixtureName := *fixtureFlag
@@ -1149,6 +1158,7 @@ func runStart(args []string) {
 
 	cfg := &server.Config{
 		RootDir:      rootDir,
+		FrameworkDir: frameworkDir,
 		Workspace:    workspace,
 		ConfigPath:   configPath,
 		Port:         port,
