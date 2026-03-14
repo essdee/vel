@@ -12,12 +12,12 @@ The human should never be asked to "try this link", "check if this works", or "s
 ## Debug Infrastructure Available
 
 ### Always Available (no flags needed)
-- **Structured JSON logs**: `sudo journalctl -u openclaw-dashboard-staging --since "5 min ago" --no-pager`
+- **Structured JSON logs**: `sudo journalctl -u vel --since "5 min ago" --no-pager`
 - **Request IDs**: Every response has `X-Request-ID` header. Every log line has `request_id` field.
-- **Source code**: `/opt/vel-staging/` (staging), `/opt/vel/` (production, read-only)
-- **Config files**: `/opt/vel-staging/config.json`, `/opt/vel-staging/users.json`
-- **bbolt database**: `/opt/vel-staging/data/sessions.db`
-- **curl**: Test any endpoint locally (`http://localhost:3900/...`) or externally (`https://w3-ram.ai.essd.ee/...`)
+- **Source code**: Your Vel install directory
+- **Config files**: `config.json`, `users.json` in your project root
+- **bbolt database**: `data/sessions.db`
+- **curl**: Test any endpoint locally (`http://localhost:3700/...`) or externally (`https://your-domain.example.com/...`)
 - **DNS/networking**: `host`, `nslookup`, `curl -v`, `ss -tlnp`
 
 ### Debug Server (enabled by default)
@@ -41,19 +41,18 @@ To disable: set `VEL_DEBUG=0` or `"debug": {"enabled": false}` in config.json.
 | `GET /debug/diagnose` | Token-efficient overview: errors, slow requests, auth state, buffer stats |
 
 ### External Path Testing
-The server is behind a reverse proxy:
-- **This server**: `34.100.200.79` (internal: `10.147.20.230`)
-- **Proxy server**: `15.207.163.207` (runs nginx, terminates TLS)
-- **w-ram.ai.essd.ee** → nginx → `10.147.20.230:3700` (production)
-- **w3-ram.ai.essd.ee** → nginx → `10.147.20.230:3900` (staging)
+If your server is behind a reverse proxy:
+- **Your server**: `<server-ip>` (internal: `<internal-ip>`)
+- **Proxy server**: `<proxy-ip>` (runs nginx, terminates TLS)
+- **your-domain.example.com** → nginx → `<internal-ip>:<port>`
 
 Always test both paths:
 ```bash
 # Local (bypasses proxy)
-curl -s http://localhost:3900/path
+curl -s http://localhost:3700/path
 
 # External (through proxy, like a real user)
-curl -s https://w3-ram.ai.essd.ee/path
+curl -s https://your-domain.example.com/path
 ```
 
 If local works but external doesn't → proxy/DNS/TLS issue.
@@ -66,8 +65,8 @@ When something doesn't work, follow this order. **Do NOT skip steps.**
 ### Step 1: Reproduce locally
 ```bash
 # Can you reproduce the error yourself?
-curl -v http://localhost:3900/<failing-path>
-curl -v https://w3-ram.ai.essd.ee/<failing-path>
+curl -v http://localhost:3700/<failing-path>
+curl -v https://your-domain.example.com/<failing-path>
 ```
 If you can reproduce it → proceed to Step 2.
 If you can't → the issue is client-specific (browser, cookie, cache). Check Step 5.
@@ -87,30 +86,30 @@ curl -s http://localhost:6060/debug/request/<id> | python3 -m json.tool
 ### Step 3: Check the logs
 ```bash
 # Recent errors
-sudo journalctl -u openclaw-dashboard-staging --since "5 min ago" --no-pager | grep -i error
+sudo journalctl -u vel --since "5 min ago" --no-pager | grep -i error
 
 # Specific path
-sudo journalctl -u openclaw-dashboard-staging --since "5 min ago" --no-pager | grep "/failing/path"
+sudo journalctl -u vel --since "5 min ago" --no-pager | grep "/failing/path"
 
 # Session/auth issues
-sudo journalctl -u openclaw-dashboard-staging --since "5 min ago" --no-pager | grep -i "session\|auth\|identity"
+sudo journalctl -u vel --since "5 min ago" --no-pager | grep -i "session\|auth\|identity"
 ```
 
 ### Step 4: Check the full request path
 ```bash
 # DNS: does the domain resolve to the right server?
-host w3-ram.ai.essd.ee
+host your-domain.example.com
 
-# This server's IP
+# Your server's IP
 curl -s ifconfig.me
 
 # Are they the same? If not, there's a proxy.
 
 # Is the service running?
-systemctl status openclaw-dashboard-staging
+systemctl status vel
 
 # Is the port listening?
-ss -tlnp | grep 3900
+ss -tlnp | grep 3700
 
 # What does the proxy see? (check nginx logs on proxy server if accessible)
 ```
@@ -130,7 +129,7 @@ curl -s http://localhost:6060/debug/sessions
 **Token/auth issues:**
 ```bash
 # Is the token valid? Check via API
-curl -s http://localhost:3900/api/auth/users -H "Authorization: Bearer <token>"
+curl -s http://localhost:3700/api/auth/users -H "Authorization: Bearer <token>"
 
 # Are there rate limits active?
 curl -s http://localhost:6060/debug/diagnose | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin).get('auth_summary',{}), indent=2))"
@@ -146,13 +145,13 @@ curl -s http://localhost:6060/debug/diagnose | python3 -c "import json,sys; prin
 ```bash
 # Only after Steps 1-5 fail to identify the issue
 # Read the relevant handler
-grep -A 30 "func.*HandleXxx" /opt/vel-staging/internal/server/server.go
+grep -A 30 "func.*HandleXxx" internal/server/server.go
 
 # Check middleware chain
-grep -n "isPublicPath\|RequireAuth" /opt/vel-staging/internal/server/authmiddleware.go
+grep -n "isPublicPath\|RequireAuth" internal/server/authmiddleware.go
 
 # Check for type mismatches, import issues
-grep -rn "contextKey\|identityKey" /opt/vel-staging/pkg/ /opt/vel-staging/internal/
+grep -rn "contextKey\|identityKey" pkg/ internal/
 ```
 
 ### Step 7: Fix and verify BEFORE telling the human
@@ -162,11 +161,11 @@ grep -rn "contextKey\|identityKey" /opt/vel-staging/pkg/ /opt/vel-staging/intern
 go run . build
 
 # Restart
-sudo systemctl restart openclaw-dashboard-staging
+sudo systemctl restart vel
 
 # Verify the fix yourself
-curl -v http://localhost:3900/<previously-failing-path>
-curl -v https://w3-ram.ai.essd.ee/<previously-failing-path>
+curl -v http://localhost:3700/<previously-failing-path>
+curl -v https://your-domain.example.com/<previously-failing-path>
 
 # Run verify
 ./vel verify
@@ -196,24 +195,24 @@ Telegram fetches URLs for preview cards, consuming single-use tokens. The bot fi
 `authUrl` in config.json determines the domain in magic link URLs. Staging config must use staging domain. Production config must use production domain.
 
 ### Proxy path
-External requests go through nginx on a different server. `curl localhost:3900` and `curl https://w3-ram.ai.essd.ee` hit the same code but take different network paths. Always test both.
+External requests go through nginx on a different server. `curl localhost:3700` and `curl https://your-domain.example.com` hit the same code but take different network paths. Always test both.
 
 ### Cookie Secure flag
 `vel_session` has `Secure: true`. Browser only sends it over HTTPS. Server receives HTTP (nginx strips TLS). This is normal — `Secure` controls the browser, not the server.
 
 ## What Good Debugging Looks Like
 
-### Bad (actual magic link debugging session):
+### Bad:
 1. Generate magic link → send to human → "try this" → human reports error
 2. Add print statements → rebuild → "try again" → still broken
 3. Generate another link → test with curl (consuming it) → "try this new one" → human tries consumed token
 4. Guess it's nginx caching → "check your nginx config" → not the issue
 5. Eventually find 3 stacked bugs after 45 minutes and 8+ human interactions
 
-### Good (with debug infrastructure):
-1. Generate magic link → test via `curl https://w3-ram.ai.essd.ee/auth/magic?ml_token=...` myself
+### Good:
+1. Generate magic link → test via `curl https://your-domain.example.com/auth/magic?ml_token=...` myself
 2. See 401 → check `/debug/request/:id` → see middleware consumed token
-3. Fix middleware → rebuild → test again myself → see 302 ✅
+3. Fix middleware → rebuild → test again myself → see 302
 4. Check `/debug/errors/recent` → see TelegramBot UA on prior request → add bot filter
 5. Test by sending URL in test message → verify bot gets 204, normal request gets 302
 6. Tell human: "Fixed. Here's your link." — ONE interaction
