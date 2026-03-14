@@ -1686,7 +1686,7 @@ func cacheHandler(h http.Handler, maxAge string) http.Handler {
 func getDomain(cfg *Config) string {
 	if cfg.PublicConfig != nil {
 		if authURL, ok := cfg.PublicConfig["authUrl"].(string); ok && authURL != "" {
-			// Extract domain from URL like https://w-ram.ai.essd.ee/auth/telegram/callback
+			// Extract domain from URL like https://dashboard.example.com/auth/telegram/callback
 			authURL = strings.TrimPrefix(authURL, "https://")
 			authURL = strings.TrimPrefix(authURL, "http://")
 			if idx := strings.Index(authURL, "/"); idx > 0 {
