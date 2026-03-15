@@ -88,7 +88,12 @@ func CheckUpdates(prodDir string) *UpdatesStatus {
 		CheckedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	result.Framework = checkRepo(prodDir, "vel")
+	// Framework repo may be in vel/ subdirectory (Decision 016 layout)
+	frameworkDir := prodDir
+	if _, err := os.Stat(filepath.Join(prodDir, "vel", ".git")); err == nil {
+		frameworkDir = filepath.Join(prodDir, "vel")
+	}
+	result.Framework = checkRepo(frameworkDir, "vel")
 
 	// Check apps from both apps/ subdirectory and VEL_APPS
 	appsDirs := []string{filepath.Join(prodDir, "apps")}
