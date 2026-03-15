@@ -132,21 +132,67 @@ hookEngine.On("core.server.ready", func() {
 
 ## Route Contract
 
-Routes are config-driven in `config/vel.json`:
+Routes are declared per-app in `app.json` under `"routes"`:
 
 ```json
 {
   "routes": {
-    "/screenshots/": "custom/screenshots",
-    "/docs/": "custom/docs"
+    "/myapp/": {
+      "type": "static",
+      "dir": "ui"
+    },
+    "/myapp/app": {
+      "type": "page",
+      "dir": "pages/app"
+    }
   }
 }
 ```
 
-**Rules:**
-- Static file serving only — no programmatic handlers in config
-- Reserved prefixes (don't use): `/api/panels/`, `/auth/`, `/ws/`, `/public/`, `/dashboard`
-- Custom API routes require modifying Go code in `internal/server/`
+The route key is the URL path prefix. The route value is a Route object:
+
+| Field | Required | Rule |
+|-------|----------|------|
+| `type` | ❌ | `"static"` (file server) or `"page"` (single HTML file). Omit when the route is handled by the app's server package. |
+| `dir` | ❌ | Directory or file path, relative to the app dir. Required when `type` is set. |
+| `public` | ❌ | `true` = route bypasses authentication. Default: `false`. |
+| `cache` | ❌ | `"none"` or `"aggressive"`. Default: no-cache for `page`, 1-hour for `static`. |
+| `target` | ❌ | Proxy target URL (e.g. `"http://localhost:3800"`). Used when `type` is omitted and the app proxies traffic. |
+
+**App-level public shorthand:** Setting `"public": true` at the top level of `app.json` marks all of the app's routes as publicly accessible — equivalent to `"public": true` on every individual route.
+
+**Public route rules:**
+- `public: true` bypasses authentication for that URL prefix
+- Framework validates at startup and logs each public route: `[Server] Public route: /myapp/ (from app myapp)`
+- The following prefixes can **never** be made public — they are framework-owned and the server ignores the flag with a warning:
+  - `/api/`
+  - `/auth/`
+  - `/dashboard`
+  - `/ws/`
+  - `/login`
+
+**Custom API routes** require Go code in the app's server package — they cannot be declared in `app.json`.
+
+**Examples from real apps:**
+
+```json
+// menayra/app.json — static site
+"routes": {
+  "/menayra/": { "type": "static", "dir": "site" }
+}
+
+// token-swap/app.json — static, no caching
+"routes": {
+  "/token-swap/": { "type": "static", "dir": "ui", "cache": "none" }
+}
+
+// velbridge/app.json — mix of page route and public server-handled routes
+"routes": {
+  "/bridge/debug/connect": { "type": "page", "dir": "pages/relay-connect" },
+  "/bridge/debug/": { "public": true },
+  "/bridge/proxy/": { "public": true }
+}
+```
 
 ---
 
