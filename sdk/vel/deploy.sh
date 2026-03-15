@@ -63,7 +63,12 @@ echo ""
 
 # Step 1: Pull framework
 echo "📥 Pulling vel framework..."
-cd "$VEL_DIR"
+# Decision 016: framework repo may be in vel/ subdirectory
+if [ -d "$VEL_DIR/vel/.git" ]; then
+    cd "$VEL_DIR/vel"
+else
+    cd "$VEL_DIR"
+fi
 git pull --ff-only 2>/dev/null || echo "  (pull failed — skipping)"
 
 # Step 2: Pull each app
@@ -93,7 +98,12 @@ fi
 # Step 3: Build
 echo ""
 echo "🔨 Building..."
-cd "$VEL_DIR"
+# Decision 016: build from framework dir (vel/) if it exists
+if [ -d "$VEL_DIR/vel/go.mod" ]; then
+    cd "$VEL_DIR/vel"
+else
+    cd "$VEL_DIR"
+fi
 $GO run . build
 
 # Step 4: Restart
