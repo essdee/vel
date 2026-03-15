@@ -1249,6 +1249,7 @@ func runStart(args []string) {
 			Mux:            srvResult.Mux,
 			Handler:        srvResult.Handler,
 			RootDir:        rootDir,
+			FrameworkDir:   frameworkDir,
 			Port:           port,
 			AuthMode:       authMode,
 		})

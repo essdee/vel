@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"vel/internal/auth"
 )
@@ -65,6 +66,15 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 
 	// ── Runtime check 4: deploy.sh health ──
 	checks = append(checks, checkDeployScript(info)...)
+
+	// ── Runtime check 5: Git repo detection (updates panel) ──
+	checks = append(checks, checkGitRepo(info)...)
+
+	// ── Runtime check 6: Deploy dry-run (can deploy.sh find go + resolve paths?) ──
+	checks = append(checks, checkDeployDryRun(info)...)
+
+	// ── Runtime check 7: Data source freshness ──
+	checks = append(checks, checkDataFreshness(info)...)
 
 	// Tally
 	passed, failed, skipped := 0, 0, 0
@@ -444,6 +454,180 @@ func checkDeployScript(info *ServerInfo) []RuntimeCheckResult {
 				Status: "fail",
 				Detail: fmt.Sprintf("resolves to %s, expected %s", resolved, rootDir),
 				Hint:   "deploy.sh VEL_DIR must resolve to the Vel root directory",
+				Layer:  3,
+			})
+		}
+	}
+
+	return results
+}
+
+// checkGitRepo verifies that the framework git repo is detectable.
+func checkGitRepo(info *ServerInfo) []RuntimeCheckResult {
+	var results []RuntimeCheckResult
+	rootDir := info.RootDir
+
+	// Check framework git repo (may be in vel/ subdirectory)
+	frameworkGit := filepath.Join(rootDir, ".git")
+	if _, err := os.Stat(frameworkGit); err != nil {
+		frameworkGit = filepath.Join(rootDir, "vel", ".git")
+	}
+
+	if _, err := os.Stat(frameworkGit); err != nil {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:git:framework",
+			Status: "fail",
+			Detail: "framework .git not found at rootDir or rootDir/vel/",
+			Hint:   "Updates panel will show 'not a git repo'. Ensure vel/ contains the framework git repo.",
+			Layer:  3,
+		})
+	} else {
+		// Get current branch
+		cmd := exec.Command("git", "-C", filepath.Dir(frameworkGit), "rev-parse", "--abbrev-ref", "HEAD")
+		if out, err := cmd.Output(); err == nil {
+			branch := strings.TrimSpace(string(out))
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:git:framework",
+				Status: "ok",
+				Detail: fmt.Sprintf("branch: %s", branch),
+				Layer:  3,
+			})
+		} else {
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:git:framework",
+				Status: "fail",
+				Detail: ".git exists but git commands fail: " + err.Error(),
+				Layer:  3,
+			})
+		}
+	}
+
+	return results
+}
+
+// checkDeployDryRun validates that the deploy script can resolve its key paths.
+func checkDeployDryRun(info *ServerInfo) []RuntimeCheckResult {
+	var results []RuntimeCheckResult
+	rootDir := info.RootDir
+
+	// Check: can we find go?
+	goCmd := exec.Command("bash", "-c", "which go 2>/dev/null || echo /usr/local/go/bin/go")
+	if out, err := goCmd.Output(); err == nil {
+		goPath := strings.TrimSpace(string(out))
+		if _, statErr := os.Stat(goPath); statErr == nil {
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:deploy:go-found",
+				Status: "ok",
+				Detail: goPath,
+				Layer:  3,
+			})
+		} else {
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:deploy:go-found",
+				Status: "fail",
+				Detail: fmt.Sprintf("go not found at %s", goPath),
+				Hint:   "Deploy will fail. Install Go or add it to PATH.",
+				Layer:  3,
+			})
+		}
+	}
+
+	// Check: does go.mod exist where build would run?
+	buildDir := rootDir
+	if _, err := os.Stat(filepath.Join(rootDir, "vel", "go.mod")); err == nil {
+		buildDir = filepath.Join(rootDir, "vel")
+	}
+	if _, err := os.Stat(filepath.Join(buildDir, "go.mod")); err != nil {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:deploy:go-mod",
+			Status: "fail",
+			Detail: fmt.Sprintf("go.mod not found in %s", buildDir),
+			Hint:   "Deploy build step will fail. Ensure framework source is in vel/ or rootDir.",
+			Layer:  3,
+		})
+	} else {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:deploy:go-mod",
+			Status: "ok",
+			Detail: fmt.Sprintf("found in %s", buildDir),
+			Layer:  3,
+		})
+	}
+
+	return results
+}
+
+// checkDataFreshness checks if data source files are stale (older than 10 minutes).
+func checkDataFreshness(info *ServerInfo) []RuntimeCheckResult {
+	var results []RuntimeCheckResult
+	rootDir := info.RootDir
+
+	appsDir := filepath.Join(rootDir, "apps")
+	entries, err := os.ReadDir(appsDir)
+	if err != nil {
+		return results
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		appDir := filepath.Join(appsDir, entry.Name())
+		appJSON, err := os.ReadFile(filepath.Join(appDir, "app.json"))
+		if err != nil {
+			continue
+		}
+
+		var app struct {
+			DataSources map[string]struct {
+				Type string `json:"type"`
+				Path string `json:"path"`
+			} `json:"data_sources"`
+		}
+		if err := json.Unmarshal(appJSON, &app); err != nil {
+			continue
+		}
+
+		for dsName, ds := range app.DataSources {
+			if ds.Type != "file" || ds.Path == "" {
+				continue
+			}
+
+			filePath := ds.Path
+			if strings.HasPrefix(filePath, "~/") {
+				if home, err := os.UserHomeDir(); err == nil {
+					filePath = filepath.Join(home, filePath[2:])
+				}
+			}
+
+			fileInfo, err := os.Stat(filePath)
+			if err != nil {
+				results = append(results, RuntimeCheckResult{
+					Name:   fmt.Sprintf("runtime:data:%s:%s", entry.Name(), dsName),
+					Status: "fail",
+					Detail: fmt.Sprintf("file not found: %s", filePath),
+					Hint:   "Data source file missing. Check if the producer script/cron is configured.",
+					Layer:  3,
+				})
+				continue
+			}
+
+			ageMin := int(time.Since(fileInfo.ModTime()).Minutes())
+			status := "ok"
+			detail := fmt.Sprintf("updated %d min ago", ageMin)
+			hint := ""
+
+			if ageMin > 10 {
+				status = "warn"
+				detail = fmt.Sprintf("stale: updated %d min ago (>10 min)", ageMin)
+				hint = "Check if the producer cron is running and pointing to the correct path."
+			}
+
+			results = append(results, RuntimeCheckResult{
+				Name:   fmt.Sprintf("runtime:data:%s:%s", entry.Name(), dsName),
+				Status: status,
+				Detail: detail,
+				Hint:   hint,
 				Layer:  3,
 			})
 		}

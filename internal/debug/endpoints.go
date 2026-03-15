@@ -22,9 +22,10 @@ type ServerInfo struct {
 	Mux     http.Handler // raw mux without auth middleware
 	Handler http.Handler // full handler with auth middleware
 	// Server config for verify
-	RootDir  string
-	Port     int
-	AuthMode string // "none", "token", "telegram"
+	RootDir      string
+	FrameworkDir string
+	Port         int
+	AuthMode     string // "none", "token", "telegram"
 }
 
 var serverInfo *ServerInfo
