@@ -163,6 +163,10 @@ func runVerify(args []string) {
 	fs.Parse(args)
 
 	rootDir := resolveProjectRoot()
+	frameworkDir := rootDir
+	if fi, err := os.Stat(filepath.Join(rootDir, "vel", "core")); err == nil && fi.IsDir() {
+		frameworkDir = filepath.Join(rootDir, "vel")
+	}
 
 	if !*jsonMode {
 		fmt.Print("\n⚡ Vel Health Check\n\n")
@@ -183,7 +187,7 @@ func runVerify(args []string) {
 	}
 
 	// Discover panels
-	registry, _ := panels.DiscoverPanels(rootDir, panelApps)
+	registry, _ := panels.DiscoverPanels(rootDir, panelApps, frameworkDir)
 
 	cfg := verify.VerifyConfig{
 		RootDir:  rootDir,
@@ -667,7 +671,11 @@ func startTestServer(rootDir string, discoveredApps []*apps.App, fixture string)
 	for _, a := range discoveredApps {
 		panelApps = append(panelApps, panels.AppInfo{Name: a.Name, Panels: a.Panels, Dir: a.Dir})
 	}
-	registry, _ := panels.DiscoverPanels(rootDir, panelApps)
+	fwDir := rootDir
+	if fi, err := os.Stat(filepath.Join(rootDir, "vel", "core")); err == nil && fi.IsDir() {
+		fwDir = filepath.Join(rootDir, "vel")
+	}
+	registry, _ := panels.DiscoverPanels(rootDir, panelApps, fwDir)
 
 	cfg := &server.Config{
 		RootDir:      rootDir,
@@ -1029,7 +1037,7 @@ func runStart(args []string) {
 
 	// Discover panels
 	fmt.Println("\n[Panels] Discovering panels...")
-	registry, report := panels.DiscoverPanels(rootDir, panelApps)
+	registry, report := panels.DiscoverPanels(rootDir, panelApps, frameworkDir)
 
 	fmt.Printf("\n┌─ Panel Report ────────────────────────\n")
 	fmt.Printf("│ Loaded: %d\n", len(report.Loaded))

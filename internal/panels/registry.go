@@ -60,15 +60,24 @@ type AppInfo struct {
 	Dir    string // absolute path to app directory
 }
 
-func DiscoverPanels(rootDir string, appList []AppInfo) (*Registry, *Report) {
+func DiscoverPanels(rootDir string, appList []AppInfo, frameworkDirs ...string) (*Registry, *Report) {
 	registry := NewRegistry()
 	report := &Report{}
+
+	// Core panels live in the framework dir (which may differ from rootDir in Decision 016 layout)
+	coreDir := filepath.Join(rootDir, "core", "panels")
+	if len(frameworkDirs) > 0 && frameworkDirs[0] != "" && frameworkDirs[0] != rootDir {
+		fwCore := filepath.Join(frameworkDirs[0], "core", "panels")
+		if _, err := os.Stat(fwCore); err == nil {
+			coreDir = fwCore
+		}
+	}
 
 	sources := []struct {
 		Dir    string
 		Source string
 	}{
-		{filepath.Join(rootDir, "core", "panels"), "core"},
+		{coreDir, "core"},
 		{filepath.Join(rootDir, "custom", "panels"), "custom"},
 	}
 
