@@ -5,10 +5,10 @@
 export PATH=$PATH:/usr/local/go/bin:/home/claw/go/bin
 
 # Detect environment
-if [ -d "/opt/vel-staging" ] && [ -f "/opt/vel-staging/vel" ]; then
+if [ -d "/opt/vel-staging" ] && [ -f "/opt/vel-staging/bin/vel" ]; then
     VEL_DIR="/opt/vel-staging"
     ENV="staging"
-elif [ -d "/opt/vel" ] && [ -f "/opt/vel/vel" ]; then
+elif [ -d "/opt/vel" ] && [ -f "/opt/vel/bin/vel" ]; then
     VEL_DIR="/opt/vel"
     ENV="production"
 else
@@ -18,7 +18,7 @@ fi
 
 cd "$VEL_DIR"
 
-OUTPUT=$(./vel verify 2>&1)
+OUTPUT=$(./bin/vel verify 2>&1)
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then

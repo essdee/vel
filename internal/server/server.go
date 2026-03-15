@@ -855,9 +855,9 @@ func NewServer(cfg *Config) ServerResult {
 		}
 		setSessionCookie(w, cfg.AuthManager, sess.ID)
 
-		// Redirect
+		// Redirect — only allow relative paths to prevent open redirect
 		redirect := r.URL.Query().Get("redirect")
-		if redirect == "" {
+		if redirect == "" || !strings.HasPrefix(redirect, "/") || strings.HasPrefix(redirect, "//") {
 			redirect = "/dashboard"
 		}
 		http.Redirect(w, r, redirect, http.StatusFound)

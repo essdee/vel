@@ -218,8 +218,13 @@ func isPublicPath(path string) bool {
 	// Prefix matches (framework routes)
 	if strings.HasPrefix(path, "/public/") ||
 		strings.HasPrefix(path, "/core/vendor/") ||
-		strings.HasPrefix(path, "/custom/theme/") ||
-		strings.HasPrefix(path, "/bridge/debug/") ||
+		strings.HasPrefix(path, "/custom/theme/") {
+		return true
+	}
+	// TODO(boundary): These bridge paths are velbridge-specific and should be
+	// declared by the app via a publicPrefixes mechanism, not hardcoded in
+	// the framework. See AUDIT-REPORT-2026-03-15.md for details.
+	if strings.HasPrefix(path, "/bridge/debug/") ||
 		strings.HasPrefix(path, "/bridge/proxy/") ||
 		strings.HasPrefix(path, "/bridge/observe/") ||
 		strings.HasPrefix(path, "/bridge/diff/") {

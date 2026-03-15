@@ -8,10 +8,19 @@
 #   */15 * * * * /path/to/vel/sdk/vel/verify-cron.sh
 
 VEL_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+# Decision 016: if we landed in the framework dir (vel/), go up one more level
+if [ -f "$VEL_DIR/../config/vel.json" ] || [ -d "$VEL_DIR/../vel/.git" ]; then
+    VEL_DIR="$(cd "$VEL_DIR/.." && pwd)"
+fi
 cd "$VEL_DIR"
 
 # Run verify in JSON mode (appends one JSONL line to logs/verify.jsonl)
-./vel verify --json > /dev/null 2>&1
+# Binary is at bin/vel (Decision 016 layout) or ./vel (legacy)
+VEL_BIN="./vel"
+if [ -f "$VEL_DIR/bin/vel" ]; then
+    VEL_BIN="./bin/vel"
+fi
+$VEL_BIN verify --json > /dev/null 2>&1
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then

@@ -105,7 +105,7 @@ fi
 echo ""
 echo "🔨 Building..."
 # Decision 016: build from framework dir (vel/) if it exists
-if [ -d "$VEL_DIR/vel/go.mod" ]; then
+if [ -f "$VEL_DIR/vel/go.mod" ]; then
     cd "$VEL_DIR/vel"
 else
     cd "$VEL_DIR"

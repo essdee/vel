@@ -55,7 +55,7 @@ Panel data is served by Go handlers in `internal/data/`. There are no per-panel 
 | `description` | ✅ | Max 100 chars |
 | `version` | ✅ | Semver |
 | `author` | ✅ | `"core"` or author name |
-| `position` | ✅ | Hint, not guarantee. Core: 10-90. Custom: 100+. App: 200+. Tiebreak: alphabetical by id. User `panels.order` in config.json always wins. |
+| `position` | ✅ | Hint, not guarantee. Core: 10-90. Custom: 100+. App: 200+. Tiebreak: alphabetical by id. User `panels.order` in `config/vel.json` always wins. |
 | `size` | ✅ | `"half"` or `"full"` |
 | `refreshMs` | ✅ | Min 1000, max 300000 |
 | `requires` | ✅ | Dependency IDs. Empty array = none |
@@ -132,7 +132,7 @@ hookEngine.On("core.server.ready", func() {
 
 ## Route Contract
 
-Routes are config-driven in `config.json`:
+Routes are config-driven in `config/vel.json`:
 
 ```json
 {
