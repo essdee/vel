@@ -6,8 +6,14 @@
 
 set -e
 
-# Resolve to Vel root: script is at sdk/vel/deploy.sh, so root is 2 levels up
+# Resolve to project root: script is at sdk/vel/deploy.sh
+# With symlink: 2 levels up from project/sdk/vel/ = project root
+# Without symlink: 2 levels up from project/vel/sdk/vel/ = framework dir (vel/)
+# Detect and correct: if we landed in the framework dir, go up one more level
 VEL_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+if [ -f "$VEL_DIR/../config/vel.json" ] || [ -d "$VEL_DIR/../vel/.git" ]; then
+    VEL_DIR="$(cd "$VEL_DIR/.." && pwd)"
+fi
 
 # Auto-detect Go
 GO="$(which go 2>/dev/null || echo /usr/local/go/bin/go)"
