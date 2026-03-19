@@ -27,7 +27,11 @@ import (
 	"vel/internal/hooks"
 	"vel/internal/panels"
 	"vel/internal/verify"
+	"vel/pkg/agent"
 	vel "vel/pkg/vel"
+
+	// Import SDK implementations so their init() registers with pkg/agent.
+	_ "vel/internal/agent/openclaw"
 )
 
 // Ensure auth import is used (legacy functions still referenced in some paths).
@@ -586,6 +590,10 @@ func NewServer(cfg *Config) ServerResult {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(result)
 	})
+
+	// Agent SDK callback endpoint — receives results from agent sessions
+	agent.RegisterCallback(fmt.Sprintf("http://localhost:%d", cfg.Port))
+	mux.HandleFunc("/api/agent/callback/", agent.CallbackHandler())
 
 	mux.HandleFunc("/api/usage/refresh", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
