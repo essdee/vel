@@ -31,7 +31,8 @@ var Tier1Packages = map[string]bool{
 	"encoding/base64": true, "encoding/hex": true,
 	"crypto/sha256": true, "crypto/sha512": true, "crypto/md5": true,
 	"crypto/hmac": true, "crypto/rand": true,
-	"vel/pkg/vel": true,
+	"vel/pkg/vel":   true,
+	"vel/pkg/agent": true,
 }
 
 // BlacklistedPackages are never allowed.
@@ -325,11 +326,11 @@ func discoverAppsFromDir(appsDir string) ([]AppBuildInfo, error) {
 		// And any other subdirectories
 		subGoFiles, _ := filepath.Glob(filepath.Join(appDir, "**", "*.go"))
 		goFiles = append(goFiles, subGoFiles...)
-		// Deduplicate
+		// Deduplicate and filter test files
 		seen := make(map[string]bool)
 		var uniqueFiles []string
 		for _, f := range goFiles {
-			if !seen[f] {
+			if !seen[f] && !strings.HasSuffix(f, "_test.go") {
 				seen[f] = true
 				uniqueFiles = append(uniqueFiles, f)
 			}
