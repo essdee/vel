@@ -187,46 +187,14 @@ func broadcastMetrics(conn *websocket.Conn, cfg *Config, done chan struct{}) {
 		}
 		log.Printf("[ws] GetSystemMetrics: %v", time.Since(t0))
 
-		// Build raw data for all known panel IDs (hardcoded sources)
+		// Build raw data for all known panel IDs via registry
 		rawData := make(map[string]interface{})
 		for id, info := range cfg.Registry.Entries() {
 			if info.Manifest == nil {
 				continue
 			}
-			switch id {
-			case "cpu":
-				if metrics.CPU != nil {
-					rawData["cpu"] = metrics.CPU
-				}
-			case "memory":
-				if metrics.Memory != nil {
-					rawData["memory"] = metrics.Memory
-				}
-			case "disk":
-				if metrics.Disk != nil {
-					rawData["disk"] = metrics.Disk
-				}
-			case "uptime":
-				rawData["uptime"] = map[string]interface{}{"uptime": metrics.Uptime, "hostname": metrics.Hostname}
-			case "processes":
-				if metrics.Processes != nil {
-					rawData["processes"] = map[string]interface{}{
-						"total": metrics.Processes.Total, "running": metrics.Processes.Running,
-						"sleeping": metrics.Processes.Sleeping, "os": metrics.OS,
-					}
-				}
-			case "claude-usage":
-				rawData["claude-usage"] = data.GetUsageData(cfg.Workspace)
-			case "crons":
-				rawData["crons"] = json.RawMessage(data.GetCronJobs(cfg.Workspace))
-			case "models":
-				rawData["models"] = json.RawMessage(data.GetAgentInfo(cfg.Workspace))
-			case "openclaw-status":
-				if cached := data.GetSystemStatusCached(); cached != nil {
-					rawData["openclaw-status"] = json.RawMessage(cached)
-				}
-			case "_test":
-				rawData["_test"] = map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()}
+			if d := GetPanelData(id, cfg); d != nil {
+				rawData[id] = d
 			}
 		}
 

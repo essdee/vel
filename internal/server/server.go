@@ -1580,59 +1580,20 @@ func servesPanelData(w http.ResponseWriter, r *http.Request, panelID string, cfg
 		return
 	}
 
-	var result json.RawMessage
-	switch panelID {
-	case "cpu":
-		m, _ := data.GetSystemMetrics()
-		if m != nil && m.CPU != nil {
-			result, _ = json.Marshal(m.CPU)
+	result := GetPanelData(panelID, cfg)
+	if result == nil {
+		// Check data sources as fallback
+		if cfg.DSManager != nil {
+			if state := cfg.DSManager.GetSourceState(panelID); state != nil {
+				servePanelResult(w, state.Data)
+				return
+			}
 		}
-	case "memory":
-		m, _ := data.GetSystemMetrics()
-		if m != nil && m.Memory != nil {
-			result, _ = json.Marshal(m.Memory)
-		}
-	case "disk":
-		m, _ := data.GetSystemMetrics()
-		if m != nil && m.Disk != nil {
-			result, _ = json.Marshal(m.Disk)
-		}
-	case "uptime":
-		m, _ := data.GetSystemMetrics()
-		if m != nil {
-			result, _ = json.Marshal(map[string]interface{}{"uptime": m.Uptime, "hostname": m.Hostname})
-		}
-	case "processes":
-		m, _ := data.GetSystemMetrics()
-		if m != nil && m.Processes != nil {
-			result, _ = json.Marshal(map[string]interface{}{
-				"total": m.Processes.Total, "running": m.Processes.Running,
-				"sleeping": m.Processes.Sleeping, "os": m.OS,
-			})
-		}
-	case "claude-usage":
-		result = data.GetUsageData(cfg.Workspace)
-	case "crons":
-		result = data.GetCronJobs(cfg.Workspace)
-	case "models":
-		result = data.GetAgentInfo(cfg.Workspace)
-	case "openclaw-status":
-		result = data.GetSystemStatusCached()
-	case "updates":
-		result = data.GetUpdatesStatus(cfg.RootDir)
-	case "_test":
-		result, _ = json.Marshal(map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()})
-	default:
 		http.Error(w, "No data handler for panel", 404)
 		return
 	}
 
-	if result == nil {
-		writeJSON(w, nil)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(result)
+	servePanelResult(w, result)
 }
 
 // isValidJobID validates a cron job ID against a strict format.
