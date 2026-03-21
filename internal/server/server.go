@@ -414,7 +414,7 @@ func NewServer(cfg *Config) ServerResult {
 			var body struct {
 				InitData string `json:"initData"`
 			}
-			json.NewDecoder(r.Body).Decode(&body)
+			decodeJSONBody(r, &body)
 			if body.InitData == "" {
 				w.WriteHeader(401)
 				writeJSON(w, map[string]interface{}{"ok": false, "error": "initData required"})
@@ -528,7 +528,7 @@ func NewServer(cfg *Config) ServerResult {
 				Name   string   `json:"name"`
 				Scopes []string `json:"scopes"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			if err := decodeJSONBody(r, &body); err != nil {
 				w.WriteHeader(400)
 				writeJSON(w, map[string]interface{}{"error": "Bad request"})
 				return
@@ -555,7 +555,7 @@ func NewServer(cfg *Config) ServerResult {
 				var body struct {
 					Name string `json:"name"`
 				}
-				json.NewDecoder(r.Body).Decode(&body)
+				decodeJSONBody(r, &body)
 				name = body.Name
 			}
 			if name == "" {
@@ -638,7 +638,7 @@ func NewServer(cfg *Config) ServerResult {
 			JobID  string `json:"jobId"`
 			Action string `json:"action"`
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		decodeJSONBody(r, &body)
 		if body.JobID == "" || body.Action == "" {
 			w.WriteHeader(400)
 			writeJSON(w, map[string]interface{}{"error": "Missing jobId or action"})
@@ -764,7 +764,7 @@ func NewServer(cfg *Config) ServerResult {
 		var body struct {
 			Token string `json:"token"`
 		}
-		json.NewDecoder(r.Body).Decode(&body)
+		decodeJSONBody(r, &body)
 		if !auth.ValidateToken(body.Token) {
 			w.WriteHeader(401)
 			writeJSON(w, map[string]interface{}{"ok": false, "error": "Invalid token"})
@@ -912,7 +912,7 @@ func NewServer(cfg *Config) ServerResult {
 			UserID        string `json:"user_id"`
 			ExpiresMinutes int   `json:"expires_minutes"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := decodeJSONBody(r, &body); err != nil {
 			w.WriteHeader(400)
 			writeJSON(w, map[string]interface{}{"ok": false, "error": "invalid request body"})
 			return
@@ -994,7 +994,7 @@ func NewServer(cfg *Config) ServerResult {
 		var body struct {
 			Email string `json:"email"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Email == "" {
+		if err := decodeJSONBody(r, &body); err != nil || body.Email == "" {
 			writeJSON(w, safeResponse)
 			return
 		}
@@ -1064,7 +1064,7 @@ func NewServer(cfg *Config) ServerResult {
 				Role       string              `json:"role"`
 				Identities []auth.UserIdentity `json:"identities"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			if err := decodeJSONBody(r, &body); err != nil {
 				w.WriteHeader(400)
 				writeJSON(w, map[string]interface{}{"ok": false, "error": "invalid request body"})
 				return
@@ -1167,7 +1167,7 @@ func NewServer(cfg *Config) ServerResult {
 				Role   string   `json:"role"`
 				Scopes []string `json:"scopes"`
 			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			if err := decodeJSONBody(r, &body); err != nil {
 				w.WriteHeader(400)
 				writeJSON(w, map[string]interface{}{"ok": false, "error": "invalid request body"})
 				return
