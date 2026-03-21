@@ -1724,6 +1724,27 @@ func magicLinkErrorHTML(title, message string) string {
 </html>`, title, title, message)
 }
 
+// shouldGzip returns true if the request path should have gzip compression applied.
+func shouldGzip(path string) bool {
+	if strings.HasPrefix(path, "/api/") {
+		return true
+	}
+	if strings.HasPrefix(path, "/ws/") {
+		return false
+	}
+	switch {
+	case strings.HasSuffix(path, ".html"), strings.HasSuffix(path, ".css"),
+		strings.HasSuffix(path, ".js"), strings.HasSuffix(path, ".json"),
+		strings.HasSuffix(path, ".svg"):
+		return true
+	}
+	switch path {
+	case "/", "/dashboard", "/login", "/auth/login":
+		return true
+	}
+	return false
+}
+
 func applyMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Security headers
@@ -1732,9 +1753,9 @@ func applyMiddleware(h http.Handler) http.Handler {
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
-		// Gzip
+		// Gzip — only for text content types
 		isWebSocket := strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
-		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !strings.HasPrefix(r.URL.Path, "/ws/") && !isWebSocket {
+		if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") && !isWebSocket && shouldGzip(r.URL.Path) {
 			w.Header().Set("Content-Encoding", "gzip")
 			gz := gzip.NewWriter(w)
 			defer gz.Close()
