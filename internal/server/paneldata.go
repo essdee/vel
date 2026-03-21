@@ -114,6 +114,10 @@ func init() {
 		return data.GetUpdatesStatus(cfg.RootDir)
 	})
 
+	RegisterPanelData("sessions", func(cfg *Config) interface{} {
+		return data.GetSessionsData()
+	})
+
 	RegisterPanelData("_test", func(cfg *Config) interface{} {
 		return map[string]interface{}{"message": "Hello from _test panel!", "ts": time.Now().UnixMilli()}
 	})

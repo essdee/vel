@@ -624,6 +624,25 @@ func NewServer(cfg *Config) ServerResult {
 		}
 	})
 
+	mux.HandleFunc("/api/sessions/refresh", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		if !checkAuth(r, cfg) {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+		result := data.GetSessionsData()
+		if result == nil {
+			writeJSON(w, map[string]interface{}{"error": "No session data"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
+	})
+
 	mux.HandleFunc("/api/crons/action", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", 405)
