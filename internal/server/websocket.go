@@ -13,10 +13,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
 type wsAuthMsg struct {
 	Type       string     `json:"type"`
 	InitData   string     `json:"initData,omitempty"`
@@ -24,7 +20,31 @@ type wsAuthMsg struct {
 	User       *auth.User `json:"user,omitempty"`
 }
 
+// checkOrigin validates that the WebSocket request originates from the configured domain.
+// Allows requests with no Origin header (same-origin clients may omit it).
+func checkOrigin(cfg *Config) func(r *http.Request) bool {
+	return func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		// Extract host from origin (strip scheme)
+		host := origin
+		if idx := strings.Index(host, "://"); idx >= 0 {
+			host = host[idx+3:]
+		}
+		// Strip any trailing path
+		if idx := strings.Index(host, "/"); idx >= 0 {
+			host = host[:idx]
+		}
+		return strings.EqualFold(host, getDomain(cfg))
+	}
+}
+
 func handleWebSocket(w http.ResponseWriter, r *http.Request, cfg *Config) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: checkOrigin(cfg),
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
