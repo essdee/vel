@@ -95,7 +95,8 @@ func generateWrapperCode(pkg, pkgName string) string {
 				for _, spec := range d.Specs {
 					switch s := spec.(type) {
 					case *ast.TypeSpec:
-						if ast.IsExported(s.Name.Name) {
+						if ast.IsExported(s.Name.Name) && s.TypeParams == nil {
+							// Skip generic types (TypeParams != nil) — they cannot be aliased without instantiation.
 							typeSet[s.Name.Name] = true
 						}
 					case *ast.ValueSpec:
