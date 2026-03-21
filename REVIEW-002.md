@@ -52,3 +52,27 @@ Non-API HTML routes (e.g. `/auth/telegram/callback`) won't be gzipped now. Inten
 - Body size limits — consistent 1MB via decodeJSONBody helper
 - statusRecorder double WriteHeader fix — correct early return
 - Panel data registry pattern — good design, just needs perf fix
+
+---
+
+## Fix Round 1 — Re-review
+
+**Date:** 2026-03-21
+**Commit:** `866b4de`
+**Verdict:** ✅ Both issues resolved.
+
+### B1 — GetSystemMetrics TTL cache — ✅ Fixed
+Added `sync.Mutex` + `time.Time` TTL cache (1s) in `internal/data/metrics.go`. `GetSystemMetrics()` now checks cache first; all 6 callers within the same 2s WS tick share one syscall result. `fetchSystemMetrics()` extracted as the uncached inner function. Clean implementation, correct lock/unlock ordering.
+
+### NB3 — Integration tests restored — ✅ Fixed
+542 lines of integration tests restored in `internal/server/server_test.go`. Coverage includes: routes (root, dashboard, health, mode, version, config, panels), auth (POST empty, dev mode on/off, logout + cookie clearing), gzip middleware, security headers, rate limiting (429 on 11th request), custom routes, theme serving, panel discovery (core + custom + plugin), and nonexistent paths/dirs. All 28 tests passing.
+
+**Also fixed:** `sdk/vel/deploy.sh` — corrected `./vel verify` → `./bin/vel verify` path.
+
+### Test verification
+```
+go test ./internal/server/ -v -count=1 — 28/28 PASS (0.19s)
+```
+
+### Remaining non-blocking (from initial review)
+NB1 (checkOrigin port matching), NB2 (servePanelResult no explicit status code), NB4 (DNS rebinding in isPrivateTarget), NB5 (shouldGzip narrower) — unchanged, for Architect's backlog.

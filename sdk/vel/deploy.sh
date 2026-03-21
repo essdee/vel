@@ -133,7 +133,7 @@ echo ""
 echo "🔍 Verifying deployment..."
 sleep 2  # give server a moment to fully initialize
 cd "$VEL_DIR"
-./vel verify --json 2>&1 | tee /dev/stderr
+./bin/vel verify --json 2>&1 | tee /dev/stderr
 
 if [ ${PIPESTATUS[0]} -ne 0 ]; then
     echo ""
