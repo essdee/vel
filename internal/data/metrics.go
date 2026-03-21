@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -12,6 +13,17 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/process"
 )
+
+// metricsCache provides a short TTL cache for GetSystemMetrics to avoid
+// redundant syscalls when multiple callers request metrics within the same tick.
+var metricsCache struct {
+	sync.Mutex
+	result *SystemMetrics
+	err    error
+	ts     time.Time
+}
+
+const metricsCacheTTL = 1 * time.Second
 
 type SystemMetrics struct {
 	CPU       *CPUMetrics       `json:"cpu"`
@@ -52,6 +64,26 @@ type ProcessesMetrics struct {
 }
 
 func GetSystemMetrics() (*SystemMetrics, error) {
+	metricsCache.Lock()
+	if metricsCache.result != nil && time.Since(metricsCache.ts) < metricsCacheTTL {
+		r, e := metricsCache.result, metricsCache.err
+		metricsCache.Unlock()
+		return r, e
+	}
+	metricsCache.Unlock()
+
+	result, err := fetchSystemMetrics()
+
+	metricsCache.Lock()
+	metricsCache.result = result
+	metricsCache.err = err
+	metricsCache.ts = time.Now()
+	metricsCache.Unlock()
+
+	return result, err
+}
+
+func fetchSystemMetrics() (*SystemMetrics, error) {
 	metrics := &SystemMetrics{Ts: time.Now().UnixMilli()}
 
 	// CPU
