@@ -276,6 +276,10 @@ func NewServer(cfg *Config) ServerResult {
 				if route.Target != "" {
 					target := route.Target
 					prefix := urlPrefix
+					if !isPrivateTarget(target) {
+						fmt.Printf("[Server] WARN: Proxy route %s skipped — target %s is not a private address\n", prefix, target)
+						continue
+					}
 					mux.HandleFunc(prefix, func(w http.ResponseWriter, r *http.Request) {
 						proxyURL := target + strings.TrimPrefix(r.URL.Path, strings.TrimSuffix(prefix, "/"))
 						if r.URL.RawQuery != "" {
@@ -291,7 +295,8 @@ func NewServer(cfg *Config) ServerResult {
 								proxyReq.Header.Add(k, v)
 							}
 						}
-						resp, err := http.DefaultClient.Do(proxyReq)
+						stripSensitiveHeaders(proxyReq, r)
+						resp, err := proxyClient.Do(proxyReq)
 						if err != nil {
 							http.Error(w, "Bad gateway", 502)
 							return
