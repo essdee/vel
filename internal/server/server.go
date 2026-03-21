@@ -639,6 +639,11 @@ func NewServer(cfg *Config) ServerResult {
 			writeJSON(w, map[string]interface{}{"error": "Missing jobId or action"})
 			return
 		}
+		if !isValidJobID(body.JobID) {
+			w.WriteHeader(400)
+			writeJSON(w, map[string]interface{}{"error": "Invalid jobId format"})
+			return
+		}
 		if body.Action != "run" && body.Action != "enable" && body.Action != "disable" {
 			w.WriteHeader(400)
 			writeJSON(w, map[string]interface{}{"error": "Invalid action"})
@@ -1623,6 +1628,26 @@ func servesPanelData(w http.ResponseWriter, r *http.Request, panelID string, cfg
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.Write(result)
+}
+
+// isValidJobID validates a cron job ID against a strict format.
+// Allows alphanumeric, dots, hyphens, underscores. Must start with alphanumeric. Max 64 chars.
+func isValidJobID(id string) bool {
+	if len(id) == 0 || len(id) > 64 {
+		return false
+	}
+	// Must start with alphanumeric
+	c := id[0]
+	if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+		return false
+	}
+	for i := 1; i < len(id); i++ {
+		c = id[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, v interface{}) {
