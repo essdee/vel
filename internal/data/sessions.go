@@ -22,6 +22,44 @@ const sessionsCacheTTL = 2 * time.Second
 // prevUpdatedAt tracks the previous updatedAt values for delta-based working detection.
 var prevUpdatedAt sync.Map
 
+// activityBuffer stores rolling activity history per session.
+// Each entry is a ring buffer of booleans: true = updatedAt changed on that tick.
+var activityBuffer struct {
+	sync.Mutex
+	data map[string]*ringBuf
+}
+
+type ringBuf struct {
+	buf  [60]bool // 60 ticks = 2 minutes at 2s intervals
+	head int      // next write position
+	len  int      // how many valid entries (0-60)
+}
+
+func (r *ringBuf) push(active bool) {
+	r.buf[r.head] = active
+	r.head = (r.head + 1) % 60
+	if r.len < 60 {
+		r.len++
+	}
+}
+
+// snapshot returns the activity history oldest→newest as a slice of 0/1 ints.
+func (r *ringBuf) snapshot() []int {
+	out := make([]int, r.len)
+	start := (r.head - r.len + 60) % 60
+	for i := 0; i < r.len; i++ {
+		idx := (start + i) % 60
+		if r.buf[idx] {
+			out[i] = 1
+		}
+	}
+	return out
+}
+
+func init() {
+	activityBuffer.data = make(map[string]*ringBuf)
+}
+
 // SessionEntry represents a single OpenClaw session.
 type SessionEntry struct {
 	Key          string  `json:"key"`
@@ -42,6 +80,7 @@ type SessionEntry struct {
 	Provider     string  `json:"provider"`
 	ChatType     string  `json:"chatType"`
 	TelegramID   string  `json:"telegramId"`
+	Heartbeat    []int   `json:"heartbeat"`
 }
 
 // SessionsData is the top-level structure returned to panels.
@@ -229,6 +268,16 @@ func fetchSessionsData() *SessionsData {
 		}
 		prevUpdatedAt.Store(k, s.UpdatedAt)
 
+		// Push working state into the rolling activity buffer
+		activityBuffer.Lock()
+		rb, exists := activityBuffer.data[k]
+		if !exists {
+			rb = &ringBuf{}
+			activityBuffer.data[k] = rb
+		}
+		rb.push(working)
+		activityBuffer.Unlock()
+
 		// Model (short form)
 		model := s.Model
 		if idx := strings.LastIndex(model, "/"); idx >= 0 {
@@ -239,7 +288,7 @@ func fetchSessionsData() *SessionsData {
 		byModel[model]++
 		byAgent[agentID]++
 
-		entries = append(entries, SessionEntry{
+		entry := SessionEntry{
 			Key:          truncate(k, 120),
 			AgentID:      agentID,
 			Kind:         kind,
@@ -258,7 +307,13 @@ func fetchSessionsData() *SessionsData {
 			Provider:     provider,
 			ChatType:     chatType,
 			TelegramID:   telegramID,
-		})
+		}
+		activityBuffer.Lock()
+		if rb, ok := activityBuffer.data[k]; ok {
+			entry.Heartbeat = rb.snapshot()
+		}
+		activityBuffer.Unlock()
+		entries = append(entries, entry)
 	}
 
 	// Sort by updatedAt descending
