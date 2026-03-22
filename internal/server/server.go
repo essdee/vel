@@ -1410,8 +1410,8 @@ func NewServer(cfg *Config) ServerResult {
 
 		var body struct {
 			Repo   string `json:"repo"`   // "vel" or app name
-			Action string `json:"action"` // "stash-pull", "reset-pull", or "diff"
-			File   string `json:"file"`   // for "reset-pull"/"diff": specific file (optional)
+			Action string `json:"action"` // "stash-pull", "stash-drop-pull", or "diff"
+			File   string `json:"file"`   // for "diff": specific file (optional)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			w.WriteHeader(400)
@@ -1453,27 +1453,14 @@ func NewServer(cfg *Config) ServerResult {
 			data.InvalidateUpdatesCache()
 			writeJSON(w, map[string]interface{}{"ok": true, "output": result})
 
-		case "reset-pull":
-			if body.File != "" {
-				if err := data.ResetFile(repoDir, body.File); err != nil {
-					writeJSON(w, map[string]interface{}{"ok": false, "error": "Reset failed: " + err.Error()})
-					return
-				}
-			} else {
-				cmd := exec.Command("git", "-C", repoDir, "checkout", ".")
-				if err := cmd.Run(); err != nil {
-					writeJSON(w, map[string]interface{}{"ok": false, "error": "Reset failed: " + err.Error()})
-					return
-				}
-			}
-			pullCmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
-			pullOut, pullErr := pullCmd.CombinedOutput()
-			data.InvalidateUpdatesCache()
-			if pullErr != nil {
-				writeJSON(w, map[string]interface{}{"ok": false, "error": "Pull failed after reset", "output": string(pullOut)})
+		case "stash-drop-pull":
+			result, err := data.StashDropAndPull(repoDir)
+			if err != nil {
+				writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error(), "output": result})
 				return
 			}
-			writeJSON(w, map[string]interface{}{"ok": true, "output": string(pullOut)})
+			data.InvalidateUpdatesCache()
+			writeJSON(w, map[string]interface{}{"ok": true, "output": result})
 
 		case "diff":
 			if body.File == "" {

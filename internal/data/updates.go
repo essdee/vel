@@ -194,29 +194,51 @@ func ResetFile(repoDir, filePath string) error {
 	return cmd.Run()
 }
 
-// StashAndPull stashes local changes, pulls, and pops the stash.
+// StashAndPull stashes local changes, pulls, and pops the stash (reapplies changes).
 func StashAndPull(repoDir string) (string, error) {
-	// Stash
-	stashCmd := exec.Command("git", "-C", repoDir, "stash", "push", "-m", "vel-panel-"+time.Now().Format("20060102-150405"))
+	stashName := "vel-panel-" + time.Now().Format("20060102-150405")
+	stashCmd := exec.Command("git", "-C", repoDir, "stash", "push", "-m", stashName)
 	if out, err := stashCmd.CombinedOutput(); err != nil {
 		return string(out), fmt.Errorf("stash failed: %w", err)
 	}
 
-	// Pull
 	pullCmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
 	pullOut, pullErr := pullCmd.CombinedOutput()
 
-	// Pop stash
+	// Pop stash — reapply local changes
 	popCmd := exec.Command("git", "-C", repoDir, "stash", "pop")
 	popOut, popErr := popCmd.CombinedOutput()
 
 	result := string(pullOut) + "\n" + string(popOut)
 	if pullErr != nil {
-		// If pull failed, pop stash back
 		return result, fmt.Errorf("pull failed: %w", pullErr)
 	}
 	if popErr != nil {
 		return result, fmt.Errorf("stash pop conflict — resolve manually: %w", popErr)
 	}
+	return result, nil
+}
+
+// StashDropAndPull stashes local changes, pulls, but does NOT reapply the stash.
+// The stash is kept in git stash list for recovery if needed.
+func StashDropAndPull(repoDir string) (string, error) {
+	stashName := "vel-panel-" + time.Now().Format("20060102-150405")
+	stashCmd := exec.Command("git", "-C", repoDir, "stash", "push", "-m", stashName)
+	stashOut, err := stashCmd.CombinedOutput()
+	if err != nil {
+		return string(stashOut), fmt.Errorf("stash failed: %w", err)
+	}
+
+	pullCmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
+	pullOut, pullErr := pullCmd.CombinedOutput()
+
+	result := "Stashed as: " + stashName + "\n" + string(pullOut)
+	if pullErr != nil {
+		// Pull failed — pop stash back so nothing is lost
+		popCmd := exec.Command("git", "-C", repoDir, "stash", "pop")
+		popCmd.Run()
+		return result, fmt.Errorf("pull failed (stash restored): %w", pullErr)
+	}
+	// Stash stays in git stash list — recoverable via `git stash list` / `git stash apply`
 	return result, nil
 }
