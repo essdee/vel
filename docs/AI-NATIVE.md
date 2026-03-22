@@ -58,8 +58,8 @@ Vel doesn't rely on agents knowing security best practices:
 
 - **Capability system** — apps declare what they can import. `os/exec`, `syscall`, `unsafe` are blacklisted at compile time. An agent literally cannot import them.
 - **Auth built in** — Telegram HMAC-SHA256, signed cookies, rate limiting. All on by default.
-- **Parameterized queries only** — the model system (v0.2) will make SQL injection impossible by construction.
-- **CORS, CSRF, security headers** — on by default, not opt-in.
+- **Parameterized queries only** — the model system will make SQL injection impossible by construction.
+- **CORS, security headers** — on by default, not opt-in. CSRF protection is planned.
 
 The path of least resistance is the secure path. Always.
 
@@ -79,7 +79,7 @@ Panel manifest validation already does this (Elm-quality messages). The model sy
 
 A small API is easy to learn. A predictable API is easy to use correctly — even when it's large.
 
-Today, Vel's public API is five functions. That will grow. The model system, permissions, workflows, and email will all add surface area. Pretending it won't is dishonest.
+Today, Vel's public API (`pkg/vel`) has ~30 exported functions across auth, health, security, error handling, and app registration. It will grow. The model system, permissions, workflows, and email will all add surface area. Pretending it won't is dishonest.
 
 What matters isn't the count — it's the consistency. Every model should have the same methods. Every resource should follow the same URL pattern. Every error should have the same shape. An agent that understands how `Item` works should be able to work with `Invoice` without reading a single new line of documentation.
 
@@ -90,7 +90,7 @@ The rules:
 - **Discoverable.** `vel status` outputs every available API endpoint. An agent never guesses what exists.
 - **No aliases.** One name per concept. If it's called `on_update` in models, it's not called `after_save` somewhere else.
 
-A 50-function API where every function follows the same pattern is better than a 5-function API with special cases.
+A larger API where every function follows the same pattern is better than a small API with special cases.
 
 ### 7. Token efficiency
 
@@ -156,13 +156,13 @@ These are known holes in the principles above. They don't have clean answers yet
 
 **JSON has limits.** "JSON for structure, code for logic" is the right direction. But where's the line? A 40-field invoice model with conditional required fields and computed totals pushes JSON to its limits. The boundary between declaration and code needs to be explicitly defined before the model system is built.
 
-**Runtime security isn't compile-time security.** The capability system prevents agents from importing dangerous packages. That's compile-time. But most real breaches are runtime: data leaking between tenants, users approving their own expenses, row-level access violations. The permission model (v0.4) must address this — compile-time guardrails alone aren't enough.
+**Runtime security isn't compile-time security.** The capability system prevents agents from importing dangerous packages. That's compile-time. But most real breaches are runtime: data leaking between tenants, users approving their own expenses, row-level access violations. The permission model must address this — compile-time guardrails alone aren't enough.
 
 **Agent capabilities change fast.** These principles are derived from 2025-2026 agent behaviour. Context windows went from 8K to 1M in two years. Token costs drop yearly. Principles based on current limitations could become unnecessarily restrictive. Every guardrail should be removable without refactoring — so the framework evolves with agents, not against them.
 
 **Why, not just what.** `vel status` will tell an agent what exists. It won't tell the agent *why* it exists — what constraints were discussed, what alternatives were rejected. Agents lose context between sessions. The framework should support decision provenance: a machine-readable history of why things are the way they are.
 
-**Reports need dynamic queries.** "Parameterized queries only, no raw SQL" is correct for user-facing data. But the roadmap includes a report builder (v0.9) that needs grouping, aggregation, joins, date ranges. The principle should distinguish between write paths (strict, safe) and read-only analytics (where controlled dynamic queries are necessary).
+**Reports need dynamic queries.** "Parameterized queries only, no raw SQL" is correct for user-facing data. But a report builder needs grouping, aggregation, joins, date ranges. The principle should distinguish between write paths (strict, safe) and read-only analytics (where controlled dynamic queries are necessary).
 
 **Reviewability.** An AI agent builds an app. A human needs to review it. How long does that take? If the framework's conventions are strong enough, a human should understand any Vel app's structure in minutes — not because they wrote it, but because every app looks the same. This is the flip side of "one way to do everything" and it's worth measuring.
 

@@ -432,10 +432,10 @@ Everything else requires a valid session or API key.
 ### From request handlers
 
 ```go
-import "vel/internal/server"
+import vel "vel/pkg/vel"
 
 func myHandler(w http.ResponseWriter, r *http.Request) {
-    identity := server.GetIdentity(r)
+    identity := vel.GetIdentity(r)
     if identity == nil {
         http.Error(w, "Unauthorized", 401)
         return
@@ -447,7 +447,9 @@ func myHandler(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-### Middleware guards
+> **Note:** The middleware guards below use `internal/server` — they are for framework contributors only. App developers should use `vel.Check(r)` and `vel.IsAdmin(r)` from the public API.
+
+### Middleware guards (framework-internal)
 
 ```go
 mux.Handle("/protected", server.RequireAuth(myHandler))

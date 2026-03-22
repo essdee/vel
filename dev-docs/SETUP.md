@@ -25,10 +25,10 @@ Vel is a modular dashboard framework written in Go. It provides:
 ## Step 1 — Prerequisites
 
 ```bash
-# Go 1.24+
+# Go 1.25+
 go version || {
-  curl -LO https://go.dev/dl/go1.24.1.linux-amd64.tar.gz
-  sudo tar -C /usr/local -xzf go1.24.1.linux-amd64.tar.gz
+  curl -LO https://go.dev/dl/go1.25.0.linux-amd64.tar.gz
+  sudo tar -C /usr/local -xzf go1.25.0.linux-amd64.tar.gz
   export PATH=$PATH:/usr/local/go/bin
   echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 }

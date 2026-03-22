@@ -14,7 +14,7 @@ Where things live, when they get updated, and how to keep them honest.
 
 **When it gets updated:** Every code change that affects behavior must update the relevant doc in the same commit. No code-only commits that change documented behavior.
 
-**Staleness check:** Sentinel verifies doc-code consistency on every review. Periodic: compare ROADMAP.md claims against actual code.
+**Staleness check:** Sentinel verifies doc-code consistency on every review. Periodic: compare FEATURE-INVENTORY.md claims against actual code.
 
 ### 2. Vel-Project-Notes
 
@@ -64,7 +64,7 @@ vel/
 │   ├── PILLARS.md     ← Pillars + core design principles
 │   ├── ARCHITECTURE.md ← Why Vel is built this way
 │   ├── AI-NATIVE.md   ← Agent-first design deep dive
-│   └── ROADMAP.md     ← What's planned
+│   └── FEATURE-INVENTORY.md ← Built vs yet-to-build features
 ```
 
 ---
@@ -93,4 +93,4 @@ vel/
 
 3. **Don't claim what isn't verified.** No ✅ on features without checking the code. Use ⚠️ for "exists but unverified" and ❓ for "may not exist."
 
-4. **Docs describe reality, not aspirations.** What's planned goes in ROADMAP.md. What exists goes everywhere else. Don't mix.
+4. **Docs describe reality, not aspirations.** What's planned goes in FEATURE-INVENTORY.md (under "Yet to Build"). What exists goes everywhere else. Don't mix.

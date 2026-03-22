@@ -1,4 +1,4 @@
-# AGENT-EXTEND.md — AI Agent Playbook
+# BUILDING-APPS.md — AI Agent Playbook
 
 **For AI agents:** How to extend Vel apps on behalf of your human. Create custom panels, override core panels, register hooks, add routes, install apps, and create themes.
 
@@ -8,7 +8,7 @@
 
 Every code change **must** include corresponding documentation updates:
 
-- New panel → update AGENT-EXTEND.md with usage example
+- New panel → update BUILDING-APPS.md with usage example
 - Contract change → update CONTRACTS.md
 - Architecture change → update ARCHITECTURE.md
 - Testing change → update TESTING.md
