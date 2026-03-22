@@ -67,15 +67,60 @@ fi
 echo "⚡ Vel Deploy"
 echo ""
 
+# Helper: stash-aware git pull for a repo directory
+# Handles local modifications that would block --ff-only
+safe_git_pull() {
+    local repo_dir="$1"
+    local repo_name="$2"
+    cd "$repo_dir"
+
+    # Check for local modifications
+    local dirty=$(git status --porcelain 2>/dev/null | grep -v '^??' || true)
+    local stashed=false
+
+    if [ -n "$dirty" ]; then
+        echo "  ⚠ $repo_name has local changes — stashing..."
+        echo "$dirty" | sed 's/^/    /'
+        if git stash push -m "vel-deploy-$(date +%Y%m%d-%H%M%S)" 2>/dev/null; then
+            stashed=true
+        else
+            echo "  ❌ $repo_name: stash failed — skipping pull"
+            return 1
+        fi
+    fi
+
+    # Pull
+    if git pull --ff-only 2>&1; then
+        echo "  ✅ $repo_name: pulled"
+    else
+        echo "  ❌ $repo_name: pull failed"
+        # Pop stash back if we stashed
+        if $stashed; then
+            git stash pop 2>/dev/null || true
+        fi
+        return 1
+    fi
+
+    # Re-apply stashed changes
+    if $stashed; then
+        if git stash pop 2>/dev/null; then
+            echo "  ✅ $repo_name: local changes re-applied"
+        else
+            echo "  ⚠ $repo_name: stash pop conflict — local changes in stash, resolve manually"
+            echo "    Run: cd $repo_dir && git stash show && git stash pop"
+        fi
+    fi
+    return 0
+}
+
 # Step 1: Pull framework
 echo "📥 Pulling vel framework..."
 # Decision 016: framework repo may be in vel/ subdirectory
 if [ -d "$VEL_DIR/vel/.git" ]; then
-    cd "$VEL_DIR/vel"
+    safe_git_pull "$VEL_DIR/vel" "vel-framework"
 else
-    cd "$VEL_DIR"
+    safe_git_pull "$VEL_DIR" "vel-framework"
 fi
-git pull --ff-only 2>/dev/null || echo "  (pull failed — skipping)"
 
 # Step 2: Pull each app
 # Helper: pull git-tracked apps from a given directory
@@ -87,8 +132,7 @@ pull_apps_from_dir() {
         app_name=$(basename "$app_dir")
         if [ -d "$app_dir/.git" ]; then
             echo "📥 Pulling $app_name..."
-            cd "$app_dir"
-            git pull --ff-only 2>/dev/null || echo "  (pull failed for $app_name — continuing)"
+            safe_git_pull "$app_dir" "$app_name"
         fi
     done
 }
