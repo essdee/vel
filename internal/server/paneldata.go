@@ -111,7 +111,7 @@ func init() {
 	})
 
 	RegisterPanelData("updates", func(cfg *Config) interface{} {
-		return data.GetUpdatesStatus(cfg.RootDir)
+		return data.GetUpdatesCached(cfg.RootDir)
 	})
 
 	RegisterPanelData("sessions", func(cfg *Config) interface{} {

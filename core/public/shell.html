@@ -243,14 +243,9 @@
     const isSettingsPanel = (m) => settingsPanelIds.has(m.id) || m._source === 'core';
 
     // ── Settings Page ──
-    function SettingsPage({ panels, panelDataMap, lastUpdateMap, connected, config, sourceStatus }) {
-      const settingsPanels = panels.filter(m => settingsPanelIds.has(m.id) || m._source === 'core');
-
-      const updatesPanels = settingsPanels.filter(m => m.id === 'updates');
-      const authPanels = settingsPanels.filter(m => m.id === 'auth-settings');
-      const diagPanels = settingsPanels.filter(m => m.id === 'error-log' || m.id === 'verify-status');
-
-      const Section = ({ title, icon, children }) => html`
+    // Section header — defined once outside render to avoid re-creating on every update
+    function SettingsSection({ title, icon, children }) {
+      return html`
         <div style="margin-bottom:24px">
           <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:10px;display:flex;align-items:center;gap:6px">
             <span>${icon}</span> ${title}
@@ -260,67 +255,72 @@
           </div>
         </div>
       `;
+    }
+
+    function SettingsPage({ panels, panelDataMap, lastUpdateMap, connected, config, sourceStatus }) {
+      const settingsPanels = useMemo(() => panels.filter(m => settingsPanelIds.has(m.id) || m._source === 'core'), [panels]);
+      const updatesPanels = useMemo(() => settingsPanels.filter(m => m.id === 'updates'), [settingsPanels]);
+      const authPanels = useMemo(() => settingsPanels.filter(m => m.id === 'auth-settings'), [settingsPanels]);
+      const diagPanels = useMemo(() => settingsPanels.filter(m => m.id === 'error-log' || m.id === 'verify-status'), [settingsPanels]);
 
       return html`
-        <div class="container">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:8px 0">
-            <a href="#/" style="text-decoration:none;font-size:20px;color:var(--text-dim);cursor:pointer;padding:4px 8px;border-radius:6px;transition:background 0.2s"
-              onmouseover=${e => e.currentTarget.style.background='rgba(255,255,255,0.05)'}
-              onmouseout=${e => e.currentTarget.style.background='none'}>←</a>
-            <div>
-              <h1 style="font-size:20px;margin:0">Settings</h1>
-              <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">System Configuration</div>
-            </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:8px 0">
+          <a href="#/" style="text-decoration:none;font-size:20px;color:var(--text-dim);cursor:pointer;padding:4px 8px;border-radius:6px;transition:background 0.2s"
+            onmouseover=${e => e.currentTarget.style.background='rgba(255,255,255,0.05)'}
+            onmouseout=${e => e.currentTarget.style.background='none'}>←</a>
+          <div>
+            <h1 style="font-size:20px;margin:0">Settings</h1>
+            <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">System Configuration</div>
           </div>
+        </div>
 
-          <${Section} title="Updates" icon="📦">
-            ${updatesPanels.map(manifest => html`
-              <${PanelCard}
-                key=${manifest.id}
-                manifest=${manifest}
-                panelData=${panelDataMap[manifest.id] || null}
-                panelError=${null}
-                connected=${connected}
-                lastUpdate=${lastUpdateMap[manifest.id] || null}
-                config=${config}
-                sourceStatus=${sourceStatus}
-              />
-            `)}
-          <//>
+        <${SettingsSection} title="Updates" icon="📦">
+          ${updatesPanels.map(manifest => html`
+            <${PanelCard}
+              key=${manifest.id}
+              manifest=${manifest}
+              panelData=${panelDataMap[manifest.id] || null}
+              panelError=${null}
+              connected=${connected}
+              lastUpdate=${lastUpdateMap[manifest.id] || null}
+              config=${config}
+              sourceStatus=${sourceStatus}
+            />
+          `)}
+        <//>
 
-          <${Section} title="Users & Authentication" icon="🔐">
-            ${authPanels.map(manifest => html`
-              <${PanelCard}
-                key=${manifest.id}
-                manifest=${manifest}
-                panelData=${panelDataMap[manifest.id] || null}
-                panelError=${null}
-                connected=${connected}
-                lastUpdate=${lastUpdateMap[manifest.id] || null}
-                config=${config}
-                sourceStatus=${sourceStatus}
-              />
-            `)}
-          <//>
+        <${SettingsSection} title="Users & Authentication" icon="🔐">
+          ${authPanels.map(manifest => html`
+            <${PanelCard}
+              key=${manifest.id}
+              manifest=${manifest}
+              panelData=${panelDataMap[manifest.id] || null}
+              panelError=${null}
+              connected=${connected}
+              lastUpdate=${lastUpdateMap[manifest.id] || null}
+              config=${config}
+              sourceStatus=${sourceStatus}
+            />
+          `)}
+        <//>
 
-          <${Section} title="Diagnostics" icon="🔍">
-            ${diagPanels.map(manifest => html`
-              <${PanelCard}
-                key=${manifest.id}
-                manifest=${manifest}
-                panelData=${panelDataMap[manifest.id] || null}
-                panelError=${null}
-                connected=${connected}
-                lastUpdate=${lastUpdateMap[manifest.id] || null}
-                config=${config}
-                sourceStatus=${sourceStatus}
-              />
-            `)}
-          <//>
+        <${SettingsSection} title="Diagnostics" icon="🔍">
+          ${diagPanels.map(manifest => html`
+            <${PanelCard}
+              key=${manifest.id}
+              manifest=${manifest}
+              panelData=${panelDataMap[manifest.id] || null}
+              panelError=${null}
+              connected=${connected}
+              lastUpdate=${lastUpdateMap[manifest.id] || null}
+              config=${config}
+              sourceStatus=${sourceStatus}
+            />
+          `)}
+        <//>
 
-          <div class="footer">
-            <span>© ${new Date().getFullYear()} ${config.company || ''}</span>
-          </div>
+        <div class="footer">
+          <span>© ${new Date().getFullYear()} ${config.company || ''}</span>
         </div>
       `;
     }
