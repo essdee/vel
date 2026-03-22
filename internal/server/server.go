@@ -1346,19 +1346,153 @@ func NewServer(cfg *Config) ServerResult {
 			writeJSON(w, map[string]interface{}{"error": "deploy.sh not found"})
 			return
 		}
-		// Invalidate cache so next check reflects post-deploy state
-		data.InvalidateUpdatesCache()
-		// Run deploy in background — script restarts the service so this process will die
+		// Write deploy output to a log file for the panel to read
+		logPath := filepath.Join(cfg.RootDir, "logs", "deploy.log")
+		os.MkdirAll(filepath.Dir(logPath), 0755)
+		logFile, err := os.Create(logPath)
+		if err != nil {
+			w.WriteHeader(500)
+			writeJSON(w, map[string]interface{}{"error": "Cannot create deploy log: " + err.Error()})
+			return
+		}
 		cmd := exec.Command("bash", deployScript)
-		cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"))
+		cmd.Env = append(os.Environ(), "HOME="+os.Getenv("HOME"), "GOTOOLCHAIN=auto")
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
 		if err := cmd.Start(); err != nil {
+			logFile.Close()
 			w.WriteHeader(500)
 			writeJSON(w, map[string]interface{}{"error": "Failed to start deploy: " + err.Error()})
 			return
 		}
-		// Detach — deploy.sh will restart the service
-		go cmd.Wait()
-		writeJSON(w, map[string]interface{}{"ok": true, "message": "Deploy started. Dashboard will restart shortly."})
+		go func() {
+			cmd.Wait()
+			logFile.Close()
+		}()
+		data.InvalidateUpdatesCache()
+		writeJSON(w, map[string]interface{}{"ok": true, "message": "Deploy started — check log for progress."})
+	})
+
+	mux.HandleFunc("/api/updates/deploy-log", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "GET" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		if !checkAuth(r, cfg) {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+		logPath := filepath.Join(cfg.RootDir, "logs", "deploy.log")
+		content, err := os.ReadFile(logPath)
+		if err != nil {
+			writeJSON(w, map[string]interface{}{"log": "", "error": "No deploy log found"})
+			return
+		}
+		stat, _ := os.Stat(logPath)
+		writeJSON(w, map[string]interface{}{
+			"log":       string(content),
+			"timestamp": stat.ModTime().UTC().Format(time.RFC3339),
+		})
+	})
+
+	// Resolve conflicts for a specific repo
+	mux.HandleFunc("/api/updates/resolve", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			http.Error(w, "Method not allowed", 405)
+			return
+		}
+		if !checkAuth(r, cfg) {
+			w.WriteHeader(403)
+			writeJSON(w, map[string]interface{}{"error": "Unauthorized"})
+			return
+		}
+
+		var body struct {
+			Repo   string `json:"repo"`   // "vel" or app name
+			Action string `json:"action"` // "stash-pull", "reset-pull", or "diff"
+			File   string `json:"file"`   // for "reset-pull"/"diff": specific file (optional)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.WriteHeader(400)
+			writeJSON(w, map[string]interface{}{"error": "Invalid request"})
+			return
+		}
+
+		// Resolve repo directory
+		repoDir := ""
+		if body.Repo == "vel" {
+			repoDir = cfg.FrameworkDir
+		} else {
+			appsDirs := []string{filepath.Join(cfg.RootDir, "apps")}
+			if ext := os.Getenv("VEL_APPS"); ext != "" {
+				appsDirs = append(appsDirs, ext)
+			}
+			for _, dir := range appsDirs {
+				candidate := filepath.Join(dir, body.Repo)
+				if _, err := os.Stat(filepath.Join(candidate, ".git")); err == nil {
+					repoDir = candidate
+					break
+				}
+			}
+		}
+
+		if repoDir == "" {
+			w.WriteHeader(404)
+			writeJSON(w, map[string]interface{}{"error": "Repo not found"})
+			return
+		}
+
+		switch body.Action {
+		case "stash-pull":
+			result, err := data.StashAndPull(repoDir)
+			if err != nil {
+				writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error(), "output": result})
+				return
+			}
+			data.InvalidateUpdatesCache()
+			writeJSON(w, map[string]interface{}{"ok": true, "output": result})
+
+		case "reset-pull":
+			if body.File != "" {
+				if err := data.ResetFile(repoDir, body.File); err != nil {
+					writeJSON(w, map[string]interface{}{"ok": false, "error": "Reset failed: " + err.Error()})
+					return
+				}
+			} else {
+				cmd := exec.Command("git", "-C", repoDir, "checkout", ".")
+				if err := cmd.Run(); err != nil {
+					writeJSON(w, map[string]interface{}{"ok": false, "error": "Reset failed: " + err.Error()})
+					return
+				}
+			}
+			pullCmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
+			pullOut, pullErr := pullCmd.CombinedOutput()
+			data.InvalidateUpdatesCache()
+			if pullErr != nil {
+				writeJSON(w, map[string]interface{}{"ok": false, "error": "Pull failed after reset", "output": string(pullOut)})
+				return
+			}
+			writeJSON(w, map[string]interface{}{"ok": true, "output": string(pullOut)})
+
+		case "diff":
+			if body.File == "" {
+				cmd := exec.Command("git", "-C", repoDir, "diff")
+				out, _ := cmd.Output()
+				writeJSON(w, map[string]interface{}{"ok": true, "diff": string(out)})
+			} else {
+				diff, err := data.GetFileDiff(repoDir, body.File)
+				if err != nil {
+					writeJSON(w, map[string]interface{}{"ok": false, "error": err.Error()})
+					return
+				}
+				writeJSON(w, map[string]interface{}{"ok": true, "diff": diff})
+			}
+
+		default:
+			w.WriteHeader(400)
+			writeJSON(w, map[string]interface{}{"error": "Unknown action: " + body.Action})
+		}
 	})
 
 	// Gateway restart (SDK)

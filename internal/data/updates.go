@@ -14,13 +14,15 @@ import (
 
 // RepoStatus holds the update status for a single git repository.
 type RepoStatus struct {
-	Name          string `json:"name"`
-	CurrentSHA    string `json:"currentSHA"`
-	LatestSHA     string `json:"latestSHA,omitempty"`
-	CommitsBehind int    `json:"commitsBehind"`
-	UpToDate      bool   `json:"upToDate"`
-	Branch        string `json:"branch,omitempty"`
-	Error         string `json:"error,omitempty"`
+	Name          string   `json:"name"`
+	CurrentSHA    string   `json:"currentSHA"`
+	LatestSHA     string   `json:"latestSHA,omitempty"`
+	CommitsBehind int      `json:"commitsBehind"`
+	UpToDate      bool     `json:"upToDate"`
+	Branch        string   `json:"branch,omitempty"`
+	Error         string   `json:"error,omitempty"`
+	DirtyFiles    []string `json:"dirtyFiles,omitempty"` // modified tracked files
+	HasDirty      bool     `json:"hasDirty"`             // convenience flag
 }
 
 // UpdatesStatus is the full update report for the framework + all apps.
@@ -54,6 +56,23 @@ func checkRepo(dir, name string) *RepoStatus {
 		status.Branch = strings.TrimSpace(string(out))
 	} else {
 		status.Branch = "main"
+	}
+
+	// Check for local modifications (tracked files only)
+	statusCmd := exec.Command("git", "-C", dir, "status", "--porcelain")
+	if out, err := statusCmd.Output(); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "??") {
+				continue // skip untracked files
+			}
+			// Extract filename (status is first 2 chars, then space, then path)
+			if len(line) > 3 {
+				status.DirtyFiles = append(status.DirtyFiles, line)
+			}
+		}
+		status.HasDirty = len(status.DirtyFiles) > 0
 	}
 
 	// Fetch from origin (best-effort — network may be unavailable)
@@ -157,4 +176,47 @@ func InvalidateUpdatesCache() {
 	updatesMu.Lock()
 	defer updatesMu.Unlock()
 	updatesCacheAt = time.Time{}
+}
+
+// GetFileDiff returns the git diff for a specific file in a repo directory.
+func GetFileDiff(repoDir, filePath string) (string, error) {
+	cmd := exec.Command("git", "-C", repoDir, "diff", filePath)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(out), nil
+}
+
+// ResetFile resets a specific file to match the upstream version.
+func ResetFile(repoDir, filePath string) error {
+	cmd := exec.Command("git", "-C", repoDir, "checkout", "--", filePath)
+	return cmd.Run()
+}
+
+// StashAndPull stashes local changes, pulls, and pops the stash.
+func StashAndPull(repoDir string) (string, error) {
+	// Stash
+	stashCmd := exec.Command("git", "-C", repoDir, "stash", "push", "-m", "vel-panel-"+time.Now().Format("20060102-150405"))
+	if out, err := stashCmd.CombinedOutput(); err != nil {
+		return string(out), fmt.Errorf("stash failed: %w", err)
+	}
+
+	// Pull
+	pullCmd := exec.Command("git", "-C", repoDir, "pull", "--ff-only")
+	pullOut, pullErr := pullCmd.CombinedOutput()
+
+	// Pop stash
+	popCmd := exec.Command("git", "-C", repoDir, "stash", "pop")
+	popOut, popErr := popCmd.CombinedOutput()
+
+	result := string(pullOut) + "\n" + string(popOut)
+	if pullErr != nil {
+		// If pull failed, pop stash back
+		return result, fmt.Errorf("pull failed: %w", pullErr)
+	}
+	if popErr != nil {
+		return result, fmt.Errorf("stash pop conflict — resolve manually: %w", popErr)
+	}
+	return result, nil
 }
