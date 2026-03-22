@@ -181,8 +181,23 @@ curl -s http://localhost:6060/debug/errors/recent?n=5
 ### Context key types in Go
 Two packages defining `type contextKey string` with the same value creates **different types**. `context.Value()` matches on type+value. Always use a shared constant or plain string key across packages.
 
-### Single-use tokens
-Magic links are single-use. If you test a token with curl, it's consumed. Generate a separate token for testing.
+### Magic link generation
+**Use the helper script:** `sdk/vel/magic-link.sh <user_id> [staging|production]`
+
+Critical details:
+- **Query parameter:** `?ml_token=` (NOT `?token=`)
+- **Database:** tokens are stored in `data/sessions.db` (NOT `auth.db` — the MagicLinkStore shares the session store's bbolt DB)
+- **Exclusive access:** bbolt requires exclusive access — the script stops the server, writes the token, then restarts
+- **Single-use:** if you test a token with curl, it's consumed. Generate TWO tokens if you need to test one yourself.
+
+Alternative (when server is running with an admin session):
+```bash
+curl -X POST http://localhost:3900/api/auth/magic-link \
+  -H "Authorization: Bearer vel_ak_..." \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "karthi", "expires_minutes": 15}'
+```
+This requires an existing admin API key (prefix `vel_ak_`, stored in `users.json`).
 
 ### Rate limits
 Magic link creation: 5/hour/user (in-memory, resets on server restart).

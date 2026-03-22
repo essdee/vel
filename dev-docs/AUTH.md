@@ -206,18 +206,39 @@ curl -H "Authorization: Bearer vel_ak_live_abc123..." https://example.com/api/au
 Passwordless login via one-time URL tokens.
 
 **How it works:**
-1. Admin generates a magic link via Admin API or Auth Settings panel
+1. Admin generates a magic link via Admin API, Auth Settings panel, or `sdk/vel/magic-link.sh`
 2. User receives URL with `?ml_token=vel_ml_...`
 3. User visits `/auth/magic?ml_token=vel_ml_...`
 4. Provider SHA-256 hashes the token, validates against stored hash
 5. Checks: not expired, not already used
 6. Creates a session, marks token as used, redirects to dashboard
 
+**⚠️ Critical implementation details (for agents):**
+- Query parameter is **`ml_token`** (NOT `token`)
+- Magic links are stored in **`data/sessions.db`** (the session store's bbolt DB, NOT a separate `auth.db`)
+- The MagicLinkStore shares the bbolt database with BoltSessionStore via `sessStore.DB()`
+- bbolt requires exclusive access — you cannot write tokens while the server is running
+- Use `sdk/vel/magic-link.sh <user_id> [staging|production]` which handles stop/generate/restart
+
+**Agent workflow:**
+```bash
+# Recommended: use the helper script
+sdk/vel/magic-link.sh karthi staging
+# → outputs: https://w3-ram.ai.essd.ee/auth/magic?ml_token=vel_ml_...
+
+# Alternative: via admin API (requires existing admin session/key)
+curl -X POST http://localhost:3900/api/auth/magic-link \
+  -H "Authorization: Bearer vel_ak_..." \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "karthi", "expires_minutes": 15}'
+```
+
 **Security:**
 - Single-use (deleted after first use)
 - Short expiry (15 minutes default, configurable)
 - Stored as SHA-256 hash (plaintext never persisted)
 - Rate limited: 5 requests per hour per user
+- Telegram bot previews blocked (returns 204 for bot User-Agents)
 
 ---
 
