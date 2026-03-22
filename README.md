@@ -10,8 +10,6 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/version-0.1.0-c9a84c?style=flat-square" alt="Version">
-  <img src="https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat-square" alt="Go">
-  <img src="https://img.shields.io/badge/tests-89-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
 </p>
 
@@ -44,7 +42,7 @@ You get:       a live dashboard panel with real-time data
 ## Why Vel?
 
 ### 🤖 Agent-First
-Built for AI developers from day one. JSON manifests (agents corrupt JSON less than code). 5-function public API (less to hallucinate). Elm-quality error messages. This entire framework was built through a Telegram chat — no human wrote a line of code.
+Built for AI developers from day one. JSON manifests (agents corrupt JSON less than code). Elm-quality error messages. This entire framework was built through a Telegram chat — no human wrote a line of code.
 
 ### 🛡️ Structurally Safe
 The wrong code won't compile. Apps declare what they import, `vel build` enforces it at compile time. `os/exec` is blocked by default. In a world where [hundreds of OpenClaw skills have been flagged as potentially malicious](https://github.com/VoltAgent/awesome-openclaw-skills), Vel makes the unsafe path impossible.
@@ -133,28 +131,7 @@ Apps declare what standard library packages they need:
 
 ---
 
-## The roadmap
-
-v0.1 is the foundation. Everything structural is frozen. Feature work builds on stable contracts.
-
-| Version | Theme | What it unlocks |
-|---------|-------|-----------------|
-| **v0.1** ✅ | The Foundation | Apps, panels, auth, WebSocket, `vel build`, capability sandbox |
-| **v0.2** | The Model | JSON schema → SQLite tables, auto CRUD APIs |
-| **v0.3** | The Ecosystem | App lifecycle, dependencies, patches, `vel new-app` |
-| **v0.4** | The Guardian | Users, roles, row-level permissions |
-| **v0.5** | The Desk | Auto-generated List/Form views from models |
-| **v0.6** → **v1.0** | Scale | Jobs, email, portals, reports, enterprise features |
-
-By v0.9, you can build anything — accounting, inventory, CRM, HR — as composable Vel apps.
-
-📋 **[Full roadmap →](./ROADMAP.md)**
-
----
-
-## v0.1 — what's here today
-
-**5,756 lines of Go. 89 tests. 10 packages.**
+## What's here today
 
 - **App discovery** — drop a folder in apps/, rebuild, done
 - **Panel system** — real-time WebSocket streaming, auto-layout, error boundaries
@@ -165,15 +142,17 @@ By v0.9, you can build anything — accounting, inventory, CRM, HR — as compos
 - **Health checks** — `vel verify` + `/api/health`
 - **Frontend** — Preact + HTM (5KB vendored), service worker, responsive layout
 
+📋 **[Full feature inventory →](./docs/FEATURE-INVENTORY.md)**
+
 ---
 
 ## For AI agents
 
 Vel ships with comprehensive agent instructions:
 
-- **[AGENT-SETUP.md](./AGENT-SETUP.md)** — Step-by-step install guide your agent can follow
-- **[AGENT-EXTEND.md](./AGENT-EXTEND.md)** — How to build apps on Vel
-- **[AI-NATIVE.md](./AI-NATIVE.md)** — Why Vel is designed this way
+- **[Setup guide](./dev-docs/SETUP.md)** — Step-by-step install guide your agent can follow
+- **[Building apps](./dev-docs/BUILDING-APPS.md)** — How to build apps on Vel
+- **[AI-native design](./docs/AI-NATIVE.md)** — Why Vel is designed this way
 
 Every error message tells your agent **how to fix it**, not just what broke. Convention over configuration means fewer decisions, fewer mistakes, fewer tokens wasted.
 
@@ -183,12 +162,12 @@ Every error message tells your agent **how to fix it**, not just what broke. Con
 
 | Doc | What it covers |
 |-----|---------------|
-| [AI-NATIVE.md](./AI-NATIVE.md) | Design principles for AI-native development |
-| [CONTRACTS.md](./CONTRACTS.md) | Panel contracts, manifest schema, hooks, CSS |
-| [CONVENTIONS.md](./CONVENTIONS.md) | Decision framework and naming |
-| [TESTING.md](./TESTING.md) | Testing strategy and conventions |
-| [AGENT-EXTEND.md](./AGENT-EXTEND.md) | Build your first Vel app |
-| [AUTH.md](./docs/AUTH.md) | Comprehensive authentication & authorization reference |
+| [AI-NATIVE.md](./docs/AI-NATIVE.md) | Design principles for AI-native development |
+| [CONTRACTS.md](./dev-docs/CONTRACTS.md) | Panel contracts, manifest schema, hooks, CSS |
+| [CONVENTIONS.md](./dev-docs/CONVENTIONS.md) | Decision framework and naming |
+| [TESTING.md](./dev-docs/TESTING.md) | Testing strategy and conventions |
+| [BUILDING-APPS.md](./dev-docs/BUILDING-APPS.md) | Build your first Vel app |
+| [AUTH.md](./dev-docs/AUTH.md) | Comprehensive authentication & authorization reference |
 
 ---
 

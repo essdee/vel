@@ -230,7 +230,7 @@ Passed to ui.js as `error` prop. Panels should render error state, not crash.
 
 Built-in panels receive live data via WebSocket (2-second interval). The server pushes data for all core panels in a single message.
 
-**Custom panels do NOT receive WebSocket updates.** Custom panels must poll their own `/api/panels/{id}` endpoint using the `api.fetch()` prop. Per-panel WebSocket registration is planned for a future version.
+**Custom panels without a data source do NOT receive WebSocket updates.** They must poll their own `/api/panels/{id}` endpoint using the `api.fetch()` prop. However, app panels that declare a `dataSource` in their manifest (backed by `data_sources` in `app.json`) DO receive live WebSocket updates from the datasource manager. Per-panel WebSocket registration for custom data handlers is planned for a future version.
 
 ## `refreshMs` — Currently Informational
 

@@ -44,7 +44,7 @@ Not convention. Not guidelines. Capabilities enforced at build time. Parameteriz
 Every error: what went wrong, where, what was expected vs received, how to fix. Saves 5 retry loops per error. Both human-readable and JSON format.
 
 ### Predictable > Small
-A 50-function API where every function follows the same pattern beats a 5-function API with special cases. Same URL pattern, same method signatures, same error shape everywhere.
+A larger API where every function follows the same pattern beats a small API with special cases. Same URL pattern, same method signatures, same error shape everywhere.
 
 ### 400ms Rule
 Every app built on Vel should naturally tend toward sub-400ms response times. The framework optimizes at every layer. This is a UX cornerstone, not a nice-to-have.

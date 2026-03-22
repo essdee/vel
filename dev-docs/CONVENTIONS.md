@@ -64,13 +64,13 @@ Every piece of information lives in exactly ONE place. Duplication creates contr
 |---------|------|
 | What the rules are | `CONTRACTS.md` |
 | Why it's built this way | `ARCHITECTURE.md` |
-| How to extend it | `AGENT-EXTEND.md` |
-| How to set it up | `AGENT-SETUP.md` |
+| How to extend it | `BUILDING-APPS.md` |
+| How to set it up | `SETUP.md` |
 | Testing strategy | `TESTING.md` |
 | Decision framework | `CONVENTIONS.md` |
-| What's planned | `ROADMAP.md` |
+| What's planned | `FEATURE-INVENTORY.md` |
 | What it is + install | `README.md` |
 
 **Rule:** When updating information, find the canonical location first. If you update README.md with contract details that belong in CONTRACTS.md, you've created a future contradiction.
 
-**Enforced by CI:** `.github/workflows/docs-check.yml` blocks PRs that change core Go files without updating documentation.
+**Planned:** CI workflow (`.github/workflows/docs-check.yml`) to block PRs that change core Go files without updating documentation.
