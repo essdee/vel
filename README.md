@@ -201,4 +201,3 @@ Every error message tells your agent **how to fix it**, not just what broke. Con
 <p align="center">
   <sub><strong>Vel</strong> (வேல்) — the divine spear of Murugan. Sharp. Fast. Unerring.</sub>
 </p>
-
