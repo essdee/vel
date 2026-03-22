@@ -119,3 +119,21 @@ Each decision includes what would make us change our mind. Architecture should e
 **Why:** Prevents "works on my machine" — a panel needing `store` won't silently fail on a version without store support. Forward-compatible: new capabilities added per version without breaking existing panels.
 
 **Would change if:** Capability list exceeds ~10 items (would group into capability sets).
+
+---
+
+## Open Tensions
+
+Acknowledged tradeoffs and unsolved problems. These aren't bugs — they're design tensions that need watching.
+
+1. **Convention doesn't fit everything.** CRUD is easy. Manufacturing BOMs, double-entry accounting — these need a designed escape hatch. The raw SQL escape hatch (vel.Query()) exists for this, but the boundary between "use the framework" and "escape" needs to be clean.
+
+2. **Humans debug what agents write.** All principles optimize for AI writing code. But when it breaks at 2AM, a human reads it. Need end-to-end request traceability — not just good code, but observable code.
+
+3. **JSON has limits.** A 40-field invoice with conditional required fields pushes JSON schema to its limits. Where's the line between declaration and code? Go lifecycle hooks are the escape valve, but the split needs to be explicit.
+
+4. **Runtime ≠ compile-time security.** The capability system is compile-time. Real breaches are runtime: data leaking between tenants, row-level access violations. Framework-enforced app isolation (table prefixing) is step one; row-level is future work.
+
+5. **Agent capabilities change fast.** Guardrails designed for 2025-2026 agent limitations. As agents get better, some guardrails should be removable without refactoring the framework.
+
+6. **Reports need dynamic queries.** "No raw SQL" is right for writes. Read-only analytics needs controlled dynamic query building. The query builder (vel.QB()) addresses this, but the security boundary needs care.
