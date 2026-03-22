@@ -238,6 +238,93 @@
       </div>`;
     }
 
+    // ── Settings Panel Config ──
+    const settingsPanelIds = new Set(['auth-settings', 'error-log', 'verify-status', 'updates']);
+    const isSettingsPanel = (m) => settingsPanelIds.has(m.id) || m._source === 'core';
+
+    // ── Settings Page ──
+    function SettingsPage({ panels, panelDataMap, lastUpdateMap, connected, config, sourceStatus }) {
+      const settingsPanels = panels.filter(m => settingsPanelIds.has(m.id) || m._source === 'core');
+
+      const updatesPanels = settingsPanels.filter(m => m.id === 'updates');
+      const authPanels = settingsPanels.filter(m => m.id === 'auth-settings');
+      const diagPanels = settingsPanels.filter(m => m.id === 'error-log' || m.id === 'verify-status');
+
+      const Section = ({ title, icon, children }) => html`
+        <div style="margin-bottom:24px">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;color:var(--text-dim);margin-bottom:10px;display:flex;align-items:center;gap:6px">
+            <span>${icon}</span> ${title}
+          </div>
+          <div class="metrics-grid">
+            ${children}
+          </div>
+        </div>
+      `;
+
+      return html`
+        <div class="container">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding:8px 0">
+            <a href="#/" style="text-decoration:none;font-size:20px;color:var(--text-dim);cursor:pointer;padding:4px 8px;border-radius:6px;transition:background 0.2s"
+              onmouseover=${e => e.currentTarget.style.background='rgba(255,255,255,0.05)'}
+              onmouseout=${e => e.currentTarget.style.background='none'}>←</a>
+            <div>
+              <h1 style="font-size:20px;margin:0">Settings</h1>
+              <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px">System Configuration</div>
+            </div>
+          </div>
+
+          <${Section} title="Updates" icon="📦">
+            ${updatesPanels.map(manifest => html`
+              <${PanelCard}
+                key=${manifest.id}
+                manifest=${manifest}
+                panelData=${panelDataMap[manifest.id] || null}
+                panelError=${null}
+                connected=${connected}
+                lastUpdate=${lastUpdateMap[manifest.id] || null}
+                config=${config}
+                sourceStatus=${sourceStatus}
+              />
+            `)}
+          <//>
+
+          <${Section} title="Users & Authentication" icon="🔐">
+            ${authPanels.map(manifest => html`
+              <${PanelCard}
+                key=${manifest.id}
+                manifest=${manifest}
+                panelData=${panelDataMap[manifest.id] || null}
+                panelError=${null}
+                connected=${connected}
+                lastUpdate=${lastUpdateMap[manifest.id] || null}
+                config=${config}
+                sourceStatus=${sourceStatus}
+              />
+            `)}
+          <//>
+
+          <${Section} title="Diagnostics" icon="🔍">
+            ${diagPanels.map(manifest => html`
+              <${PanelCard}
+                key=${manifest.id}
+                manifest=${manifest}
+                panelData=${panelDataMap[manifest.id] || null}
+                panelError=${null}
+                connected=${connected}
+                lastUpdate=${lastUpdateMap[manifest.id] || null}
+                config=${config}
+                sourceStatus=${sourceStatus}
+              />
+            `)}
+          <//>
+
+          <div class="footer">
+            <span>© ${new Date().getFullYear()} ${config.company || ''}</span>
+          </div>
+        </div>
+      `;
+    }
+
     // ── Main App ──
     function App() {
       const [panels, setPanels] = useState([]);
@@ -249,9 +336,17 @@
       const [lastGlobalUpdate, setLastGlobalUpdate] = useState(null);
       const [loading, setLoading] = useState(true);
       const [sourceStatus, setSourceStatus] = useState({});
+      const [page, setPage] = useState(() => window.location.hash === '#/settings' ? 'settings' : 'dashboard');
       const wsRef = useRef(null);
       const retriesRef = useRef(0);
       const MAX_RETRIES = 10;
+
+      // Hash-based routing
+      useEffect(() => {
+        const onHash = () => setPage(window.location.hash === '#/settings' ? 'settings' : 'dashboard');
+        window.addEventListener('hashchange', onHash);
+        return () => window.removeEventListener('hashchange', onHash);
+      }, []);
 
       // Load config
       useEffect(() => {
@@ -430,8 +525,13 @@
         </div>`;
       }
 
-      return html`<div class="container">
-        <!-- Header -->
+      const updatesData = panelDataMap['updates'];
+      const hasSettingsNotification = updatesData && (
+        (updatesData.framework && updatesData.framework.commitsBehind > 0) ||
+        (updatesData.apps && updatesData.apps.some(a => a.commitsBehind > 0))
+      );
+
+      const header = html`
         <div class="header">
           <div class="header-avatar">${config.emoji || '🤖'}</div>
           <div>
@@ -441,10 +541,35 @@
           <div class="header-right">
             <div class="live-dot ${connected ? '' : 'offline-dot'}"></div>
             <span class="live-label ${connected ? '' : 'offline-label'}">${connected ? 'LIVE' : 'OFFLINE'}</span>
+            <a href="#/settings" style="position:relative;text-decoration:none;font-size:18px;padding:4px 6px;opacity:0.6;transition:opacity 0.2s;cursor:pointer;color:var(--text-dim)" onmouseover=${e => e.target.style.opacity='1'} onmouseout=${e => e.target.style.opacity='0.6'} title="Settings">
+              ⚙️
+              ${hasSettingsNotification && html`<span style="position:absolute;top:2px;right:2px;width:7px;height:7px;background:var(--red, #ef4444);border-radius:50%;border:2px solid var(--bg, #0a0a0f)"></span>`}
+            </a>
             <button onclick=${() => location.reload(true)} style="background:none;border:none;color:var(--text-dim);font-size:16px;cursor:pointer;padding:4px 6px;margin-left:4px;opacity:0.6;transition:opacity 0.2s" onmouseover=${e => e.target.style.opacity='1'} onmouseout=${e => e.target.style.opacity='0.6'} title="Reload dashboard">↻</button>
             ${browserMode && html`<button class="refresh-btn" onclick=${() => location.href = '/auth/logout'}>Logout</button>`}
           </div>
         </div>
+      `;
+
+      if (page === 'settings') {
+        return html`
+          <div class="container">
+            ${header}
+            <${SettingsPage}
+              panels=${panels}
+              panelDataMap=${panelDataMap}
+              lastUpdateMap=${lastUpdateMap}
+              connected=${connected}
+              config=${config}
+              sourceStatus=${sourceStatus}
+            />
+          </div>
+        `;
+      }
+
+      return html`<div class="container">
+        <!-- Header -->
+        ${header}
 
         ${!connected && html`<div class="status-banner" style="background: var(--yellow-dim); color: var(--yellow); text-align: center; padding: 8px; border-radius: 8px; margin-bottom: 12px; font-size: 12px;">
           ⚠ Reconnecting...
@@ -452,7 +577,7 @@
 
         <!-- Panel Grid -->
         <div class="metrics-grid">
-          ${panels.map((manifest, i) => html`
+          ${panels.filter(m => !isSettingsPanel(m)).map((manifest, i) => html`
             <${PanelCard}
               key=${manifest.id}
               manifest=${manifest}
