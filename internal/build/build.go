@@ -247,6 +247,8 @@ func Run(opts Options) error {
 	fmt.Printf("  Building binary → %s\n", outputName)
 	cmd := exec.Command("go", "build", "-o", outputPath, ".")
 	cmd.Dir = buildDir
+	// GOWORK=off prevents the parent module (vel/) from claiming _build/ as a subpackage
+	cmd.Env = append(os.Environ(), "GOWORK=off")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {

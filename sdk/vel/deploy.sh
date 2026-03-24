@@ -40,7 +40,7 @@ if [ -n "${VEL_SERVICE_NAME:-}" ]; then
 else
     # Auto-detect systemd service name by finding which service runs from this dir
     SERVICE_NAME=""
-    for svc in vel vel-staging; do
+    for svc in vel vel-staging openclaw-dashboard openclaw-dashboard-staging; do
         unit_path=$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)
         if [ -n "$unit_path" ] && grep -q "$VEL_DIR" "$unit_path" 2>/dev/null; then
             SERVICE_NAME="$svc"
@@ -49,7 +49,7 @@ else
     done
     # Fallback: check user services
     if [ -z "$SERVICE_NAME" ]; then
-        for svc in vel vel-staging; do
+        for svc in vel vel-staging openclaw-dashboard openclaw-dashboard-staging; do
             unit_path=$(systemctl --user show "$svc" -p FragmentPath --value 2>/dev/null || true)
             if [ -n "$unit_path" ] && grep -q "$VEL_DIR" "$unit_path" 2>/dev/null; then
                 SERVICE_NAME="$svc"
@@ -64,7 +64,9 @@ else
     fi
 fi
 
-echo "⚡ Vel Deploy"
+echo "⚡ Vel Deploy — $(date '+%Y-%m-%d %H:%M:%S %Z')"
+echo "   VEL_DIR: $VEL_DIR"
+echo "   SERVICE: $SERVICE_NAME"
 echo ""
 
 # Helper: stash-aware git pull for a repo directory

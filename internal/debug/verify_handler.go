@@ -76,6 +76,9 @@ func handleVerify(w http.ResponseWriter, r *http.Request) {
 	// ── Runtime check 7: Data source freshness ──
 	checks = append(checks, checkDataFreshness(info)...)
 
+	// ── Runtime check 8: Sessions data quality (no .bak contamination) ──
+	checks = append(checks, checkSessionsDataQuality(info)...)
+
 	// Tally
 	passed, failed, skipped := 0, 0, 0
 	for _, c := range checks {
@@ -435,10 +438,14 @@ func checkDeployScript(info *ServerInfo) []RuntimeCheckResult {
 		Layer:  3,
 	})
 
-	// Check 3: VEL_DIR resolves correctly
-	// Run the script's directory resolution logic to verify it points to rootDir
+	// Check 3: VEL_DIR resolves correctly (including Decision 016 correction)
+	// Run the full path resolution logic from deploy.sh
 	resolveCmd := exec.Command("bash", "-c", fmt.Sprintf(
-		`cd "$(dirname "%s")/../.." && pwd`, deployScript))
+		`VEL_DIR="$(cd "$(dirname "%s")/../.." && pwd)"
+		if [ -f "$VEL_DIR/../config/vel.json" ] || [ -d "$VEL_DIR/../vel/.git" ]; then
+			VEL_DIR="$(cd "$VEL_DIR/.." && pwd)"
+		fi
+		echo "$VEL_DIR"`, deployScript))
 	if out, err := resolveCmd.Output(); err == nil {
 		resolved := strings.TrimSpace(string(out))
 		if resolved == rootDir {
@@ -453,7 +460,39 @@ func checkDeployScript(info *ServerInfo) []RuntimeCheckResult {
 				Name:   "runtime:deploy:vel-dir",
 				Status: "fail",
 				Detail: fmt.Sprintf("resolves to %s, expected %s", resolved, rootDir),
-				Hint:   "deploy.sh VEL_DIR must resolve to the Vel root directory",
+				Hint:   "deploy.sh VEL_DIR must resolve to the Vel root directory. Check Decision 016 layout detection.",
+				Layer:  3,
+			})
+		}
+	}
+
+	// Check 4: Service detection works
+	// Simulate the deploy.sh service detection loop
+	serviceDetectCmd := exec.Command("bash", "-c", fmt.Sprintf(
+		`SERVICE_NAME=""
+		for svc in vel vel-staging openclaw-dashboard openclaw-dashboard-staging; do
+			unit_path=$(systemctl show "$svc" -p FragmentPath --value 2>/dev/null || true)
+			if [ -n "$unit_path" ] && grep -q "%s" "$unit_path" 2>/dev/null; then
+				SERVICE_NAME="$svc"
+				break
+			fi
+		done
+		echo "$SERVICE_NAME"`, rootDir))
+	if out, err := serviceDetectCmd.Output(); err == nil {
+		svcName := strings.TrimSpace(string(out))
+		if svcName != "" {
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:deploy:service-detect",
+				Status: "ok",
+				Detail: fmt.Sprintf("detected service: %s", svcName),
+				Layer:  3,
+			})
+		} else {
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:deploy:service-detect",
+				Status: "fail",
+				Detail: fmt.Sprintf("no systemd service found with WorkingDirectory containing %s", rootDir),
+				Hint:   "Deploy will fail at restart step. Set VEL_SERVICE_NAME in .env or fix systemd service config.",
 				Layer:  3,
 			})
 		}
@@ -631,6 +670,90 @@ func checkDataFreshness(info *ServerInfo) []RuntimeCheckResult {
 				Layer:  3,
 			})
 		}
+	}
+
+	return results
+}
+
+// checkSessionsDataQuality validates sessions-summary.json content for .bak contamination and staleness.
+func checkSessionsDataQuality(info *ServerInfo) []RuntimeCheckResult {
+	var results []RuntimeCheckResult
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return results
+	}
+
+	sessionsPath := filepath.Join(home, ".openclaw", "workspace", "sessions-summary.json")
+	data, err := os.ReadFile(sessionsPath)
+	if err != nil {
+		// File existence is already checked by data freshness — skip here
+		return results
+	}
+
+	var summary struct {
+		Total    int      `json:"total"`
+		Active   int      `json:"active"`
+		AgentIDs []string `json:"agentIds"`
+		Error    string   `json:"error"`
+	}
+	if err := json.Unmarshal(data, &summary); err != nil {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:data:sessions:valid-json",
+			Status: "fail",
+			Detail: "sessions-summary.json is not valid JSON: " + err.Error(),
+			Layer:  3,
+		})
+		return results
+	}
+
+	if summary.Error != "" {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:data:sessions:no-error",
+			Status: "fail",
+			Detail: "sessions data has error: " + summary.Error,
+			Hint:   "Check sessions-gen.sh and agent session files.",
+			Layer:  3,
+		})
+		return results
+	}
+
+	// Check for .bak contamination in agent IDs
+	for _, agentID := range summary.AgentIDs {
+		if strings.Contains(agentID, ".bak") {
+			results = append(results, RuntimeCheckResult{
+				Name:   "runtime:data:sessions:no-bak",
+				Status: "fail",
+				Detail: fmt.Sprintf("sessions data includes .bak agent: %s", agentID),
+				Hint:   "sessions-gen.sh glob is picking up backup directories. Fix the glob to exclude .bak*.",
+				Layer:  3,
+			})
+			return results
+		}
+	}
+	results = append(results, RuntimeCheckResult{
+		Name:   "runtime:data:sessions:no-bak",
+		Status: "ok",
+		Detail: fmt.Sprintf("no .bak agents in %d agent IDs", len(summary.AgentIDs)),
+		Layer:  3,
+	})
+
+	// Check for reasonable session count
+	if summary.Total == 0 {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:data:sessions:has-data",
+			Status: "fail",
+			Detail: "sessions-summary.json has 0 sessions",
+			Hint:   "Sessions may not be generating. Check sessions-gen.sh.",
+			Layer:  3,
+		})
+	} else {
+		results = append(results, RuntimeCheckResult{
+			Name:   "runtime:data:sessions:has-data",
+			Status: "ok",
+			Detail: fmt.Sprintf("%d sessions (%d active)", summary.Total, summary.Active),
+			Layer:  3,
+		})
 	}
 
 	return results
