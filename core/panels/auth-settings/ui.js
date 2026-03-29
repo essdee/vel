@@ -1,5 +1,78 @@
 import { html, useState, useEffect } from '/core/vendor/preact-htm.js';
 
+// Universal clipboard copy with Telegram WebApp + execCommand fallbacks
+function copyTextToClipboard(text) {
+  return new Promise(function(resolve, reject) {
+    // Step 1: navigator.clipboard (modern browsers)
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(resolve).catch(tryTelegram);
+    } else {
+      tryTelegram();
+    }
+
+    function tryTelegram() {
+      // Step 2: Telegram WebApp writeTextToClipboard (Bot API 6.9+)
+      if (window.Telegram && window.Telegram.WebApp &&
+          typeof window.Telegram.WebApp.writeTextToClipboard === 'function') {
+        window.Telegram.WebApp.writeTextToClipboard(text, function(result) {
+          if (result && result.isSuccess) { resolve(); } else { tryExecCommand(); }
+        });
+      } else {
+        tryExecCommand();
+      }
+    }
+
+    function tryExecCommand() {
+      // Step 3: execCommand textarea fallback
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        var ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) { resolve(); return; }
+      } catch (e) { /* fall through */ }
+      // Step 4: Show selectable manual-copy UI, then reject
+      showManualCopyFallback(text);
+      reject(new Error('Copy failed'));
+    }
+  });
+}
+
+function showManualCopyFallback(text) {
+  var overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
+
+  var box = document.createElement('div');
+  box.style.cssText = 'background:#1e1e2e;border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:16px;max-width:400px;width:100%;box-sizing:border-box';
+
+  var label = document.createElement('div');
+  label.style.cssText = 'font-size:13px;color:#f87171;margin-bottom:8px;font-weight:600';
+  label.textContent = 'Auto-copy failed. Select and copy manually:';
+
+  var input = document.createElement('input');
+  input.type = 'text';
+  input.value = text;
+  input.readOnly = true;
+  input.style.cssText = 'width:100%;box-sizing:border-box;padding:8px 10px;background:#2a2a3e;border:1px solid rgba(255,255,255,0.2);border-radius:6px;color:#e2e8f0;font-family:monospace;font-size:12px;margin-bottom:10px;outline:none';
+
+  var closeBtn = document.createElement('button');
+  closeBtn.textContent = 'Close';
+  closeBtn.style.cssText = 'padding:6px 14px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#e2e8f0;cursor:pointer;font-size:12px';
+  closeBtn.onclick = function() { document.body.removeChild(overlay); };
+
+  box.appendChild(label);
+  box.appendChild(input);
+  box.appendChild(closeBtn);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+
+  setTimeout(function() { input.focus(); input.select(); }, 80);
+}
+
 export default function AuthSettingsPanel({ data, error, connected, lastUpdate, api, cls }) {
   const [users, setUsers] = useState([]);
   const [keys, setKeys] = useState([]);
@@ -309,7 +382,11 @@ export default function AuthSettingsPanel({ data, error, connected, lastUpdate, 
               </div>
               <div style=${S.codeBox}>${createdKey}</div>
               <div style="display:flex;gap:8px;justify-content:flex-end">
-                <button style=${S.btnPrimary} onClick=${() => { navigator.clipboard.writeText(createdKey); showStatus('Copied!', false); }}>
+                <button style=${S.btnPrimary} onClick=${() => {
+                  copyTextToClipboard(createdKey)
+                    .then(() => showStatus('Copied!', false))
+                    .catch(() => showStatus('Auto-copy failed — select the text above manually', true));
+                }}>
                   Copy
                 </button>
                 <button style=${S.btn} onClick=${() => setCreatedKey(null)}>Close</button>
@@ -367,7 +444,11 @@ export default function AuthSettingsPanel({ data, error, connected, lastUpdate, 
           </div>
           ${mlUrl && html`
             <div style=${S.codeBox}>${mlUrl}</div>
-            <button style=${S.btnPrimary} onClick=${() => { navigator.clipboard.writeText(mlUrl); showStatus('Copied!', false); }}>
+            <button style=${S.btnPrimary} onClick=${() => {
+              copyTextToClipboard(mlUrl)
+                .then(() => showStatus('Copied!', false))
+                .catch(() => showStatus('Auto-copy failed — select the link above manually', true));
+            }}>
               Copy Link
             </button>
             <span style="margin-left:8px;font-size:11px;color:var(--text-dim)">Expires in 15 minutes</span>
